@@ -1,0 +1,157 @@
+name: Feature Sprint Pipeline
+version: "1.0"
+description: Sprint-based feature development with iterative delivery cycles
+
+phases:
+  - name: sprint_planning
+    display_name: "Sprint Planning"
+    display_name_ar: "تخطيط السبرنت"
+    agents: [product-owner, scrum-master, architect]
+    steps:
+      - name: define_sprint_goal
+        agent: product-owner
+        action: define_goal
+        outputs: [sprint_goal, feature_list, success_metrics]
+        approval_required: true
+      - name: technical_feasibility
+        agent: architect
+        action: assess_feasibility
+        inputs: [feature_list]
+        outputs: [feasibility_report, technical_risks, effort_estimates]
+        depends_on: [define_sprint_goal]
+      - name: create_sprint_backlog
+        agent: scrum-master
+        action: plan_sprint
+        inputs: [feature_list, feasibility_report, effort_estimates]
+        outputs: [sprint_backlog, task_assignments, sprint_timeline]
+        depends_on: [technical_feasibility]
+    checkpoint: true
+
+  - name: feature_design
+    display_name: "Feature Design"
+    display_name_ar: "تصميم الميزة"
+    agents: [architect, ux-designer]
+    steps:
+      - name: feature_architecture
+        agent: architect
+        action: design_feature_architecture
+        inputs: [sprint_backlog]
+        outputs: [feature_architecture, api_changes, schema_changes]
+      - name: feature_ux
+        agent: ux-designer
+        action: design_feature_ux
+        inputs: [sprint_backlog]
+        outputs: [feature_wireframes, interaction_specs, rtl_layout]
+        parallel: true
+      - name: design_review
+        agent: architect
+        action: review_designs
+        depends_on: [feature_architecture, feature_ux]
+        outputs: [design_approval, integration_notes]
+        approval_required: true
+    checkpoint: true
+
+  - name: implementation
+    display_name: "Implementation"
+    display_name_ar: "التنفيذ"
+    agents: [frontend-dev, backend-dev]
+    steps:
+      - name: backend_features
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: implement_backend_features
+        inputs: [api_changes, schema_changes]
+        outputs: [backend_feature_code, api_updates, db_migrations]
+        parallel: true
+      - name: frontend_features
+        agent: frontend-dev
+        action: implement_frontend_features
+        inputs: [feature_wireframes, interaction_specs]
+        outputs: [frontend_feature_code, component_updates]
+        parallel: true
+      - name: feature_integration
+        agent: backend-dev
+        action: integrate_features
+        depends_on: [backend_features, frontend_features]
+        outputs: [integrated_code, integration_test_results]
+    checkpoint: true
+
+  - name: sprint_testing
+    display_name: "Sprint Testing"
+    display_name_ar: "اختبار السبرنت"
+    agents: [qa-architect]
+    steps:
+      - name: feature_testing
+        agent: qa-architect
+        action: test_features
+        inputs: [integrated_code, sprint_backlog]
+        outputs: [feature_test_results, bug_list]
+      - name: regression_testing
+        agent: qa-architect
+        action: run_regression_suite
+        inputs: [integrated_code]
+        outputs: [regression_results, coverage_report]
+        depends_on: [feature_testing]
+      - name: acceptance_testing
+        agent: qa-architect
+        action: run_acceptance_tests
+        inputs: [sprint_backlog, integrated_code]
+        outputs: [acceptance_results, sprint_completion_status]
+        depends_on: [regression_testing]
+        approval_required: true
+    checkpoint: true
+
+  - name: sprint_release
+    display_name: "Sprint Release"
+    display_name_ar: "إصدار السبرنت"
+    agents: [devops-engineer, tech-writer]
+    steps:
+      - name: prepare_release
+        agent: devops-engineer
+        action: prepare_release
+        inputs: [integrated_code, acceptance_results]
+        outputs: [release_package, release_notes_draft]
+      - name: update_docs
+        agent: tech-writer
+        action: update_documentation
+        inputs: [sprint_backlog, api_updates]
+        outputs: [updated_docs, changelog]
+        parallel: true
+      - name: deploy_release
+        agent: devops-engineer
+        action: deploy_sprint_release
+        depends_on: [prepare_release, update_docs]
+        outputs: [deployment_url, monitoring_dashboard]
+        approval_required: true
+    checkpoint: true
+
+  - name: sprint_review
+    display_name: "Sprint Review & Retrospective"
+    display_name_ar: "مراجعة السبرنت والاستعراض"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: sprint_demo
+        agent: scrum-master
+        action: prepare_demo
+        inputs: [deployment_url, sprint_backlog]
+        outputs: [demo_script, sprint_metrics]
+      - name: sprint_retrospective
+        agent: scrum-master
+        action: run_retrospective
+        inputs: [sprint_metrics]
+        outputs: [retrospective_notes, improvement_actions]
+        depends_on: [sprint_demo]
+      - name: backlog_grooming
+        agent: product-owner
+        action: groom_backlog
+        inputs: [retrospective_notes, improvement_actions]
+        outputs: [updated_backlog, next_sprint_candidates]
+        depends_on: [sprint_retrospective]
+    checkpoint: true
+
+transitions:
+  sprint_planning -> feature_design: auto
+  feature_design -> implementation: requires_approval
+  implementation -> sprint_testing: auto
+  sprint_testing -> sprint_release: requires_approval
+  sprint_release -> sprint_review: auto

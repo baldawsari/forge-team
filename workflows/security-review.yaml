@@ -1,0 +1,164 @@
+name: Security Review Pipeline
+version: "1.0"
+description: Standalone comprehensive security audit workflow for existing codebases and infrastructure
+
+phases:
+  - name: scope_definition
+    display_name: "Audit Scope Definition"
+    display_name_ar: "تحديد نطاق التدقيق"
+    agents: [security-specialist, architect]
+    steps:
+      - name: define_scope
+        agent: security-specialist
+        action: define_audit_scope
+        outputs: [audit_scope, asset_inventory, risk_categories]
+        approval_required: true
+      - name: architecture_review
+        agent: architect
+        action: review_architecture_security
+        inputs: [audit_scope, asset_inventory]
+        outputs: [architecture_findings, attack_surface_map]
+        depends_on: [define_scope]
+    checkpoint: true
+
+  - name: static_analysis
+    display_name: "Static Code Analysis"
+    display_name_ar: "التحليل الثابت للكود"
+    agents: [security-specialist, qa-architect]
+    steps:
+      - name: dependency_audit
+        agent: security-specialist
+        action: audit_dependencies
+        inputs: [asset_inventory]
+        outputs: [dependency_vulnerabilities, outdated_packages, license_issues]
+        parallel: true
+      - name: code_scan
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: static_code_analysis
+        inputs: [asset_inventory]
+        outputs: [code_vulnerabilities, code_smells, injection_risks]
+        parallel: true
+      - name: secret_detection
+        agent: security-specialist
+        action: scan_for_secrets
+        inputs: [asset_inventory]
+        outputs: [exposed_secrets, hardcoded_credentials, env_issues]
+        parallel: true
+      - name: code_quality_review
+        agent: qa-architect
+        action: review_code_quality
+        inputs: [asset_inventory]
+        outputs: [quality_report, maintainability_score]
+        parallel: true
+    checkpoint: true
+
+  - name: dynamic_analysis
+    display_name: "Dynamic Analysis & Penetration Testing"
+    display_name_ar: "التحليل الديناميكي واختبار الاختراق"
+    agents: [security-specialist]
+    steps:
+      - name: api_security_test
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: test_api_security
+        outputs: [api_vulnerabilities, auth_weaknesses, rate_limit_issues]
+      - name: input_validation_test
+        agent: security-specialist
+        action: test_input_validation
+        outputs: [xss_findings, sqli_findings, csrf_findings]
+        parallel: true
+      - name: auth_flow_test
+        agent: security-specialist
+        action: test_authentication
+        outputs: [auth_vulnerabilities, session_issues, privilege_escalation]
+        parallel: true
+      - name: infrastructure_scan
+        agent: security-specialist
+        action: scan_infrastructure
+        outputs: [infra_vulnerabilities, misconfigurations, exposed_services]
+        parallel: true
+    checkpoint: true
+
+  - name: compliance_check
+    display_name: "Compliance & Standards Check"
+    display_name_ar: "فحص الامتثال والمعايير"
+    agents: [security-specialist, business-analyst]
+    steps:
+      - name: owasp_compliance
+        agent: security-specialist
+        action: check_owasp_top10
+        outputs: [owasp_report, remediation_priorities]
+      - name: data_protection
+        agent: security-specialist
+        action: check_data_protection
+        outputs: [gdpr_compliance, data_flow_analysis, pii_exposure]
+        parallel: true
+      - name: regulatory_review
+        agent: business-analyst
+        action: review_regulatory_requirements
+        outputs: [regulatory_gaps, compliance_checklist]
+        parallel: true
+    checkpoint: true
+
+  - name: threat_modeling
+    display_name: "Threat Modeling"
+    display_name_ar: "نمذجة التهديدات"
+    agents: [security-specialist, architect]
+    steps:
+      - name: build_threat_model
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: create_threat_model
+        inputs:
+          - architecture_findings
+          - attack_surface_map
+          - code_vulnerabilities
+          - api_vulnerabilities
+        outputs: [threat_model, stride_analysis, risk_matrix]
+      - name: mitigation_planning
+        agent: architect
+        action: plan_mitigations
+        inputs: [threat_model, risk_matrix]
+        outputs: [mitigation_plan, architecture_recommendations]
+        depends_on: [build_threat_model]
+        approval_required: true
+    checkpoint: true
+
+  - name: reporting
+    display_name: "Security Report"
+    display_name_ar: "تقرير الأمان"
+    agents: [security-specialist, tech-writer]
+    steps:
+      - name: compile_findings
+        agent: security-specialist
+        action: compile_security_report
+        inputs:
+          - dependency_vulnerabilities
+          - code_vulnerabilities
+          - api_vulnerabilities
+          - threat_model
+          - owasp_report
+          - mitigation_plan
+        outputs: [executive_summary, detailed_findings, risk_scorecard]
+      - name: write_report
+        agent: tech-writer
+        action: format_security_report
+        inputs: [executive_summary, detailed_findings, risk_scorecard]
+        outputs: [security_report, remediation_guide, security_runbook]
+        depends_on: [compile_findings]
+      - name: present_findings
+        agent: security-specialist
+        action: present_to_stakeholders
+        inputs: [security_report]
+        outputs: [presentation, action_items]
+        depends_on: [write_report]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  scope_definition -> static_analysis: auto
+  static_analysis -> dynamic_analysis: auto
+  dynamic_analysis -> compliance_check: auto
+  compliance_check -> threat_modeling: auto
+  threat_modeling -> reporting: requires_approval

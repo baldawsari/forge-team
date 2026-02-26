@@ -1,0 +1,120 @@
+name: Full SDLC Pipeline
+version: "1.0"
+description: Complete software development lifecycle from requirements to deployment
+
+phases:
+  - name: requirements
+    display_name: "Requirements Gathering"
+    display_name_ar: "جمع المتطلبات"
+    agents: [product-owner, business-analyst]
+    model_override: null
+    steps:
+      - name: gather_requirements
+        agent: product-owner
+        action: gather_and_prioritize
+        outputs: [user_stories, acceptance_criteria]
+        approval_required: true
+      - name: market_analysis
+        agent: business-analyst
+        action: analyze_market
+        outputs: [market_report, competitor_analysis]
+        parallel: true
+    checkpoint: true
+
+  - name: design
+    display_name: "Architecture & Design"
+    display_name_ar: "التصميم المعماري"
+    agents: [architect, ux-designer]
+    steps:
+      - name: system_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_architecture
+        outputs: [system_diagram, api_spec, db_schema, security_model]
+        approval_required: true
+      - name: ui_design
+        agent: ux-designer
+        action: create_wireframes
+        outputs: [wireframes, component_specs, rtl_plan]
+        parallel: true
+    checkpoint: true
+
+  - name: development
+    display_name: "Development"
+    display_name_ar: "التطوير"
+    agents: [frontend-dev, backend-dev]
+    steps:
+      - name: frontend_implementation
+        agent: frontend-dev
+        action: implement_frontend
+        inputs: [wireframes, component_specs]
+        outputs: [frontend_code, component_library]
+        parallel: true
+      - name: backend_implementation
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: implement_backend
+        inputs: [api_spec, db_schema]
+        outputs: [backend_code, api_endpoints, migrations]
+        parallel: true
+      - name: integration
+        agent: backend-dev
+        action: integrate_systems
+        depends_on: [frontend_implementation, backend_implementation]
+    checkpoint: true
+
+  - name: testing
+    display_name: "Testing & QA"
+    display_name_ar: "الاختبار وضمان الجودة"
+    agents: [qa-architect, security-specialist]
+    steps:
+      - name: test_strategy
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: create_test_strategy
+        outputs: [test_plan, risk_matrix]
+      - name: automated_testing
+        agent: qa-architect
+        action: run_tests
+        outputs: [test_results, coverage_report]
+      - name: security_audit
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: security_review
+        outputs: [threat_model, compliance_report]
+        parallel: true
+    checkpoint: true
+
+  - name: deployment
+    display_name: "Deployment"
+    display_name_ar: "النشر"
+    agents: [devops-engineer]
+    steps:
+      - name: ci_cd_setup
+        agent: devops-engineer
+        action: setup_pipeline
+        outputs: [pipeline_config, infrastructure]
+      - name: deploy
+        agent: devops-engineer
+        action: deploy_to_environment
+        approval_required: true
+        outputs: [deployment_url, health_checks]
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer]
+    steps:
+      - name: generate_docs
+        agent: tech-writer
+        action: write_documentation
+        outputs: [api_docs, user_guide, deployment_guide]
+    checkpoint: true
+
+transitions:
+  requirements -> design: auto
+  design -> development: requires_approval
+  development -> testing: auto
+  testing -> deployment: requires_approval
+  deployment -> documentation: auto

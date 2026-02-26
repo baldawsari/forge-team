@@ -1,0 +1,21 @@
+{
+  "name": "forge-team",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "gateway",
+    "dashboard",
+    "memory",
+    "viadp"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=gateway",
+    "dev:gateway": "npm run dev --workspace=gateway",
+    "build": "npm run build --workspace=gateway",
+    "typecheck": "npm run typecheck --workspace=gateway"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

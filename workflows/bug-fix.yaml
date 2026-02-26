@@ -1,0 +1,107 @@
+name: Bug Fix Pipeline
+version: "1.0"
+description: Quick bug fix workflow for triaging, fixing, and verifying bug reports
+
+phases:
+  - name: triage
+    display_name: "Bug Triage"
+    display_name_ar: "فرز الخلل"
+    agents: [qa-architect, product-owner]
+    steps:
+      - name: reproduce_bug
+        agent: qa-architect
+        action: reproduce_and_classify
+        outputs: [reproduction_steps, severity_assessment, affected_components]
+        approval_required: false
+      - name: prioritize_fix
+        agent: product-owner
+        action: assess_priority
+        inputs: [severity_assessment]
+        outputs: [priority_decision, sprint_assignment]
+        depends_on: [reproduce_bug]
+    checkpoint: true
+
+  - name: investigation
+    display_name: "Root Cause Analysis"
+    display_name_ar: "تحليل السبب الجذري"
+    agents: [backend-dev, frontend-dev]
+    steps:
+      - name: backend_investigation
+        agent: backend-dev
+        action: investigate_backend
+        inputs: [reproduction_steps, affected_components]
+        outputs: [root_cause_backend, affected_files_backend]
+        parallel: true
+      - name: frontend_investigation
+        agent: frontend-dev
+        action: investigate_frontend
+        inputs: [reproduction_steps, affected_components]
+        outputs: [root_cause_frontend, affected_files_frontend]
+        parallel: true
+      - name: root_cause_summary
+        agent: backend-dev
+        action: summarize_root_cause
+        depends_on: [backend_investigation, frontend_investigation]
+        outputs: [root_cause_report, fix_approach]
+    checkpoint: true
+
+  - name: fix
+    display_name: "Implement Fix"
+    display_name_ar: "تنفيذ الإصلاح"
+    agents: [backend-dev, frontend-dev]
+    steps:
+      - name: implement_fix
+        agent: backend-dev
+        action: apply_fix
+        inputs: [root_cause_report, fix_approach]
+        outputs: [fix_code, fix_description]
+      - name: write_regression_test
+        agent: qa-architect
+        action: create_regression_test
+        inputs: [reproduction_steps, fix_code]
+        outputs: [regression_tests]
+        depends_on: [implement_fix]
+    checkpoint: true
+
+  - name: verification
+    display_name: "Verification"
+    display_name_ar: "التحقق"
+    agents: [qa-architect, security-specialist]
+    steps:
+      - name: run_regression
+        agent: qa-architect
+        action: run_tests
+        inputs: [regression_tests, fix_code]
+        outputs: [test_results, coverage_delta]
+      - name: quick_security_check
+        agent: security-specialist
+        action: quick_security_scan
+        inputs: [fix_code]
+        outputs: [security_clearance]
+        parallel: true
+      - name: verify_fix
+        agent: qa-architect
+        action: verify_bug_fixed
+        depends_on: [run_regression, quick_security_check]
+        outputs: [verification_report]
+        approval_required: true
+    checkpoint: true
+
+  - name: deploy_fix
+    display_name: "Deploy Fix"
+    display_name_ar: "نشر الإصلاح"
+    agents: [devops-engineer]
+    steps:
+      - name: hotfix_deploy
+        agent: devops-engineer
+        action: deploy_hotfix
+        inputs: [fix_code, verification_report]
+        outputs: [deployment_url, rollback_plan]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  triage -> investigation: auto
+  investigation -> fix: auto
+  fix -> verification: auto
+  verification -> deploy_fix: requires_approval
