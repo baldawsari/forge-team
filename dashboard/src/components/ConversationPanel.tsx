@@ -13,10 +13,11 @@ import {
   X,
   Users,
   ArrowLeftRight,
+  Sparkles,
 } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { useSocket } from "@/lib/socket";
-import type { GatewayMessageEvent } from "@/lib/socket";
+import type { GatewayMessageEvent, PartyModeSelectionEvent } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 import {
   fetchSessions,
@@ -42,6 +43,8 @@ interface ChatMsg {
   timestamp: string;
   isUser: boolean;
   audioBase64?: string;
+  correlationId?: string;
+  data?: Record<string, any>;
 }
 
 interface SessionInfo {
@@ -83,16 +86,27 @@ function shouldShowTimeDivider(prev: string | null, curr: string): boolean {
 }
 
 const ARABIC_AGENT_NAME_MAP: Record<string, string> = {
+  "ونستون": "architect",
   "المعماري": "architect",
+  "أميليا-BE": "backend-dev",
   "مطور الخلفية": "backend-dev",
+  "أميليا-FE": "frontend-dev",
   "مطور الواجهة": "frontend-dev",
+  "بوب": "scrum-master",
   "سكرم ماستر": "scrum-master",
+  "جون": "product-owner",
   "مالك المنتج": "product-owner",
+  "ماري": "business-analyst",
   "محلل الأعمال": "business-analyst",
+  "سالي": "ux-designer",
   "مصمم": "ux-designer",
+  "كوين": "qa-architect",
   "مهندس الجودة": "qa-architect",
+  "باري": "devops-engineer",
   "مهندس DevOps": "devops-engineer",
+  "شيلد": "security-specialist",
   "الأمن": "security-specialist",
+  "بايج": "tech-writer",
   "الكاتب التقني": "tech-writer",
   "بي ماد": "bmad-master",
   "الكل": "broadcast",
@@ -159,6 +173,9 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // --- Party Mode ---
+  const [partyModeThinking, setPartyModeThinking] = useState<PartyModeSelectionEvent | null>(null);
+
   // --- Load sessions on mount, auto-create if none ---
   useEffect(() => {
     fetchSessions()
@@ -219,7 +236,16 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
         content: data.payload?.content ?? "",
         timestamp: data.timestamp,
         isUser: isFromUser,
+        correlationId: data.correlationId,
+        data: data.payload?.data as Record<string, any> | undefined,
       };
+
+      // Clear party mode thinking when the first response arrives for this correlation
+      if (!isFromUser && (data as any).correlationId) {
+        setPartyModeThinking((prev) =>
+          prev?.correlationId === (data as any).correlationId ? null : prev
+        );
+      }
 
       setMessages((prev) => {
         if (prev.some((m) => m.id === msg.id)) return prev;
@@ -233,6 +259,15 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
     });
     return unsub;
   }, [on, sessionId, agentMap, isAr, t, userScrolledUp]);
+
+  // --- Socket: listen for party mode selections ---
+  useEffect(() => {
+    const unsub = on("party_mode_selection" as any, (data: PartyModeSelectionEvent) => {
+      if (sessionId && data.sessionId !== sessionId) return;
+      setPartyModeThinking(data);
+    });
+    return unsub;
+  }, [on, sessionId]);
 
   // --- Auto-scroll ---
   useEffect(() => {
@@ -679,52 +714,196 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                       )}
 
                       {/* Agent-to-user / Agent broadcast bubble */}
-                      {!msg.isUser && !isAgentToAgent && (
-                        <div className="flex justify-start mb-3">
-                          <div className="max-w-[70%]">
-                            <div className="flex items-center gap-2 mb-1">
-                              <button
-                                onClick={() => setDmAgent(msg.from)}
-                                className="text-lg shrink-0 hover:scale-110 transition-transform"
-                                title={msg.fromLabel}
-                              >
-                                {msg.fromAvatar}
-                              </button>
-                              <span className="text-xs font-semibold text-text-primary">
-                                {msg.fromLabel}
-                              </span>
-                              {msg.to && msg.to !== "user" && msg.to !== "dashboard" && (
-                                <>
-                                  <span className="text-text-muted/40 text-[10px]">
-                                    {isAr ? "\u2190" : "\u2192"}
+                      {!msg.isUser && !isAgentToAgent && (() => {
+                        const data = (msg as any).payload?.data ?? (msg as any).data;
+                        const isPartyMode = data?.partyMode === true;
+                        const agentRole = data?.agentRole as string | undefined;
+                        const correlationId = (msg as any).correlationId;
+
+                        // Check if this is the first party mode msg in its group
+                        const isFirstInGroup = isPartyMode && (() => {
+                          for (let j = idx - 1; j >= 0; j--) {
+                            const prev = messages[j];
+                            if (prev.isUser) return true;
+                            const prevData = (prev as any).payload?.data ?? (prev as any).data;
+                            if (prevData?.partyMode && (prev as any).correlationId === correlationId) return false;
+                            return true;
+                          }
+                          return true;
+                        })();
+
+                        // Check if this is the last party mode msg in its group (for follow-up chips)
+                        const isLastInGroup = isPartyMode && (() => {
+                          for (let j = idx + 1; j < messages.length; j++) {
+                            const next = messages[j];
+                            if (next.isUser) return true;
+                            const nextData = (next as any).payload?.data ?? (next as any).data;
+                            if (nextData?.partyMode && (next as any).correlationId === correlationId) return false;
+                            return true;
+                          }
+                          return true;
+                        })();
+
+                        return (
+                          <>
+                            {/* Party Mode group header */}
+                            {isFirstInGroup && isPartyMode && (
+                              <div className="flex items-center gap-2 mb-2 mt-1">
+                                <Sparkles size={12} className="text-purple-400" />
+                                <span className="text-[10px] font-semibold text-purple-300">
+                                  {isAr ? "\uD83C\uDF89 \u0648\u0636\u0639 \u0627\u0644\u062D\u0641\u0644\u0629" : "\uD83C\uDF89 Party Mode"}
+                                </span>
+                                <div className="flex-1 h-px bg-gradient-to-r from-purple-500/30 to-transparent" />
+                              </div>
+                            )}
+
+                            <div className={cn(
+                              "flex justify-start mb-3",
+                              isPartyMode && "ps-2 border-s-2 border-purple-500/30"
+                            )}>
+                              <div className="max-w-[70%]">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <button
+                                    onClick={() => setDmAgent(msg.from)}
+                                    className="text-lg shrink-0 hover:scale-110 transition-transform"
+                                    title={msg.fromLabel}
+                                  >
+                                    {msg.fromAvatar}
+                                  </button>
+                                  <span className="text-xs font-semibold text-text-primary">
+                                    {msg.fromLabel}
                                   </span>
-                                  <span className="text-xs text-text-secondary">
-                                    {msg.toLabel}
+                                  {agentRole && (
+                                    <span className={cn(
+                                      "text-[9px] px-1.5 py-0.5 rounded-full font-medium",
+                                      agentRole === "primary" ? "bg-purple-500/20 text-purple-300" :
+                                      agentRole === "secondary" ? "bg-blue-500/20 text-blue-300" :
+                                      "bg-emerald-500/20 text-emerald-300"
+                                    )}>
+                                      {isAr ? (agentRole === "primary" ? "\u0623\u0633\u0627\u0633\u064A" : agentRole === "secondary" ? "\u062B\u0627\u0646\u0648\u064A" : "\u0625\u0636\u0627\u0641\u064A") : agentRole.charAt(0).toUpperCase() + agentRole.slice(1)}
+                                    </span>
+                                  )}
+                                  {msg.to && msg.to !== "user" && msg.to !== "dashboard" && !isPartyMode && (
+                                    <>
+                                      <span className="text-text-muted/40 text-[10px]">
+                                        {isAr ? "\u2190" : "\u2192"}
+                                      </span>
+                                      <span className="text-xs text-text-secondary">
+                                        {msg.toLabel}
+                                      </span>
+                                    </>
+                                  )}
+                                  <span className="text-[10px] text-text-muted/50 ltr-nums ms-auto">
+                                    {formatTimestamp(msg.timestamp)}
                                   </span>
-                                </>
-                              )}
-                              <span className="text-[10px] text-text-muted/50 ltr-nums ms-auto">
-                                {formatTimestamp(msg.timestamp)}
-                              </span>
+                                </div>
+                                <div
+                                  className={cn(
+                                    "px-4 py-2.5 rounded-2xl rounded-ss-md",
+                                    isPartyMode
+                                      ? "bg-gradient-to-br from-[rgba(139,92,246,0.12)] to-[rgba(26,26,46,0.6)] border border-purple-500/20 backdrop-blur-sm"
+                                      : "bg-gradient-to-br from-[rgba(15,52,96,0.5)] to-[rgba(26,26,46,0.6)] border border-border/30 backdrop-blur-sm"
+                                  )}
+                                >
+                                  {data?.taskId && (
+                                    <div className="flex items-center gap-1 mb-1.5 text-[10px] text-blue-300/80">
+                                      <span>\uD83D\uDCCB</span>
+                                      <span>{isAr ? "\u064A\u0639\u0645\u0644 \u0639\u0644\u0649:" : "Working on:"} {data.taskId}</span>
+                                    </div>
+                                  )}
+                                  <p className="text-xs text-text-secondary leading-relaxed" dir="auto">
+                                    {msg.content}
+                                  </p>
+                                  {ttsButton(msg)}
+                                </div>
+                              </div>
                             </div>
-                            <div
-                              className={cn(
-                                "px-4 py-2.5 rounded-2xl rounded-ss-md",
-                                "bg-gradient-to-br from-[rgba(15,52,96,0.5)] to-[rgba(26,26,46,0.6)]",
-                                "border border-border/30 backdrop-blur-sm"
-                              )}
-                            >
-                              <p className="text-xs text-text-secondary leading-relaxed" dir="auto">
-                                {msg.content}
-                              </p>
-                              {ttsButton(msg)}
-                            </div>
-                          </div>
-                        </div>
-                      )}
+
+                            {/* Follow-up agent chips after last party mode message */}
+                            {isLastInGroup && isPartyMode && (
+                              <div className="flex items-center gap-2 mb-3 ps-2 flex-wrap">
+                                <span className="text-[10px] text-text-muted/60">
+                                  {isAr ? "\uD83D\uDCAC \u0633\u0624\u0627\u0644 \u0645\u062A\u0627\u0628\u0639\u0629:" : "\uD83D\uDCAC Ask follow-up:"}
+                                </span>
+                                {(() => {
+                                  // Collect all party mode agents from this group
+                                  const groupAgentIds = new Set<string>();
+                                  for (let j = idx; j >= 0; j--) {
+                                    const m = messages[j];
+                                    if (m.isUser) break;
+                                    const d = (m as any).payload?.data ?? (m as any).data;
+                                    if (d?.partyMode && (m as any).correlationId === correlationId) {
+                                      groupAgentIds.add(m.from);
+                                    } else break;
+                                  }
+                                  groupAgentIds.add(msg.from);
+                                  return Array.from(groupAgentIds).map((aid) => {
+                                    const a = agentMap[aid];
+                                    if (!a) return null;
+                                    return (
+                                      <button
+                                        key={aid}
+                                        onClick={() => setSendTarget(aid)}
+                                        className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-surface-light/40 border border-border/30 text-text-secondary hover:bg-surface-light/60 transition-colors"
+                                      >
+                                        <span>{a.avatar}</span>
+                                        <span>{isAr ? a.nameAr : a.name}</span>
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                                <button
+                                  onClick={() => setSendTarget("bmad-master")}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-surface-light/40 border border-border/30 text-text-secondary hover:bg-surface-light/60 transition-colors"
+                                >
+                                  <span>\uD83C\uDFAF</span>
+                                  <span>{isAr ? "\u0628\u064A \u0645\u0627\u062F \u0645\u0627\u0633\u062A\u0631" : "BMad Master"}</span>
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </React.Fragment>
                   );
                 })}
+                {/* Party Mode thinking indicator */}
+                {partyModeThinking && (
+                  <div className="flex justify-start mb-3">
+                    <div className="max-w-[80%]">
+                      <div className="px-4 py-3 rounded-2xl bg-gradient-to-br from-[rgba(139,92,246,0.15)] to-[rgba(59,130,246,0.08)] border border-purple-500/25 backdrop-blur-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles size={14} className="text-purple-400 animate-pulse" />
+                          <span className="text-xs font-semibold text-purple-300">
+                            {isAr ? "\u0648\u0636\u0639 \u0627\u0644\u062D\u0641\u0644\u0629 \u2014 \u0627\u0633\u062A\u0634\u0627\u0631\u0629:" : "Party Mode \u2014 consulting:"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {partyModeThinking.selections.map((sel) => {
+                            const agent = agentMap[sel.agentId];
+                            return (
+                              <div
+                                key={sel.agentId}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10"
+                                title={sel.reason}
+                              >
+                                <span className="text-base animate-pulse">{agent?.avatar ?? "\uD83E\uDD16"}</span>
+                                <span className="text-[11px] text-text-secondary">
+                                  {agent ? (isAr ? agent.nameAr : agent.name) : sel.agentId}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-1 mt-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </>
             )}

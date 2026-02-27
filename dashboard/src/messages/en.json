@@ -11,7 +11,9 @@
     "memory": "Memory",
     "modelsCost": "Models & Cost",
     "viadpAudit": "VIADP Audit",
-    "settings": "Settings"
+    "settings": "Settings",
+    "conversation": "Conversation",
+    "voiceTranscripts": "Voice Transcripts"
   },
   "stats": {
     "activeTasks": "Active Tasks",
@@ -35,7 +37,16 @@
     "agentMessages": "Agent Messages",
     "noMessages": "No messages yet",
     "unassigned": "Unassigned",
-    "waitingForHuman": "Waiting for Human"
+    "waitingForHuman": "Waiting for Human",
+    "start": "Start",
+    "approve": "Approve",
+    "revise": "Revise",
+    "working": "Working...",
+    "feedbackPlaceholder": "Enter revision feedback...",
+    "viewInConversation": "View in Conversation",
+    "clearDemoData": "Clear Demo Data",
+    "demoDataBanner": "Showing demo data — create a task to get started",
+    "demoBadge": "Demo"
   },
   "agents": {
     "title": "Agent Status",
@@ -185,5 +196,13 @@
     "notConfigured": "Voice not configured",
     "recording": "Recording...",
     "transcribing": "Transcribing..."
+  },
+  "partyMode": {
+    "title": "Party Mode",
+    "consulting": "Consulting agents...",
+    "primary": "Primary",
+    "secondary": "Secondary",
+    "tertiary": "Tertiary",
+    "askFollowUp": "Ask follow-up"
   }
 }

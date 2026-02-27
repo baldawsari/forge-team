@@ -164,11 +164,11 @@ export default function MessageFeed({ messages, agents }: MessageFeedProps) {
                     <span
                       className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
                       style={{
-                        backgroundColor: `${typeColors[msg.type]}20`,
-                        color: typeColors[msg.type],
+                        backgroundColor: `${typeColors[msg.type] ?? '#6b7280'}20`,
+                        color: typeColors[msg.type] ?? '#6b7280',
                       }}
                     >
-                      {isAr ? typeLabels[msg.type].ar : typeLabels[msg.type].en}
+                      {isAr ? (typeLabels[msg.type]?.ar ?? msg.type) : (typeLabels[msg.type]?.en ?? msg.type)}
                     </span>
                     <span className="text-[10px] text-text-muted/50 ltr-nums ms-auto">
                       {formatTimestamp(msg.timestamp)}

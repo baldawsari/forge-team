@@ -7,7 +7,7 @@ import {
   Draggable,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { Clock, User, X, FileText, MessageSquare } from "lucide-react";
+import { Clock, User, X, FileText, MessageSquare, Plus, Play, Check, RotateCcw, Loader2 } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn, formatTimeElapsed } from "@/lib/utils";
 import type { Task, Agent, Message } from "@/lib/mock-data";
@@ -17,6 +17,12 @@ interface KanbanBoardProps {
   agents: Agent[];
   messages?: Message[];
   onTaskMove: (taskId: string, newColumn: Task["column"]) => void;
+  onTaskCreate?: (task: { title: string; description: string; priority: string; assignedTo?: string }) => void;
+  onTaskStart?: (taskId: string) => void;
+  onTaskApprove?: (taskId: string) => void;
+  onTaskReject?: (taskId: string, feedback: string) => void;
+  processingTasks?: Set<string>;
+  onSwitchToConversation?: (agentId: string) => void;
 }
 
 const columns: { id: Task["column"]; enLabel: string; arLabel: string }[] = [
@@ -57,9 +63,10 @@ interface TaskCardExpandedProps {
   locale: string;
   messages?: Message[];
   onClose: () => void;
+  onSwitchToConversation?: (agentId: string) => void;
 }
 
-function TaskCardExpanded({ task, agent, locale, messages, onClose }: TaskCardExpandedProps) {
+function TaskCardExpanded({ task, agent, locale, messages, onClose, onSwitchToConversation }: TaskCardExpandedProps) {
   const isAr = locale === "ar";
   const { t } = useLocale();
 
@@ -107,6 +114,16 @@ function TaskCardExpanded({ task, agent, locale, messages, onClose }: TaskCardEx
               </p>
             </div>
           </div>
+        )}
+
+        {agent && onSwitchToConversation && (
+          <button
+            onClick={() => { onSwitchToConversation(agent.id); onClose(); }}
+            className="w-full mb-4 flex items-center justify-center gap-2 py-2 rounded-lg bg-primary/15 text-primary-light text-xs font-medium hover:bg-primary/25 border border-primary/20 transition-colors"
+          >
+            <MessageSquare size={12} />
+            {isAr ? "عرض في المحادثة" : "View in Conversation"}
+          </button>
         )}
 
         <div className="flex items-center gap-4 text-xs text-text-muted mb-4">
@@ -172,10 +189,14 @@ function TaskCardExpanded({ task, agent, locale, messages, onClose }: TaskCardEx
   );
 }
 
-export default function KanbanBoard({ tasks, agents, messages, onTaskMove }: KanbanBoardProps) {
+export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTaskCreate, onTaskStart, onTaskApprove, onTaskReject, processingTasks, onSwitchToConversation }: KanbanBoardProps) {
   const { locale, t, direction } = useLocale();
   const isAr = locale === "ar";
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", assignedTo: "" });
+  const [feedbackTaskId, setFeedbackTaskId] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -193,8 +214,89 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove }: Kan
 
   const orderedColumns = direction === "rtl" ? [...columns].reverse() : columns;
 
+  const handleCreate = () => {
+    if (!newTask.title.trim()) return;
+    onTaskCreate?.({
+      title: newTask.title,
+      description: newTask.description,
+      priority: newTask.priority,
+      assignedTo: newTask.assignedTo || undefined,
+    });
+    setNewTask({ title: "", description: "", priority: "medium", assignedTo: "" });
+    setShowCreateForm(false);
+  };
+
   return (
     <>
+      {/* Add Task button */}
+      <div className="flex justify-end mb-3">
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-semibold shadow-lg shadow-blue-500/25"
+        >
+          <Plus size={16} />
+          {isAr ? "مهمة جديدة" : "New Task"}
+        </button>
+      </div>
+
+      {/* Create Task Modal */}
+      {showCreateForm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-md p-6 relative">
+            <button onClick={() => setShowCreateForm(false)} className="absolute top-3 end-3 text-text-muted hover:text-text-primary">
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold text-text-primary mb-4">{isAr ? "إنشاء مهمة جديدة" : "Create New Task"}</h3>
+            <div className="space-y-3">
+              <input
+                dir="auto"
+                placeholder={isAr ? "عنوان المهمة..." : "Task title..."}
+                value={newTask.title}
+                onChange={(e) => setNewTask((p) => ({ ...p, title: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg bg-surface-light/30 border border-border/40 text-text-primary text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <textarea
+                dir="auto"
+                placeholder={isAr ? "الوصف (اختياري)..." : "Description (optional)..."}
+                value={newTask.description}
+                onChange={(e) => setNewTask((p) => ({ ...p, description: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg bg-surface-light/30 border border-border/40 text-text-primary text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+              />
+              <div className="flex gap-3">
+                <select
+                  value={newTask.priority}
+                  onChange={(e) => setNewTask((p) => ({ ...p, priority: e.target.value }))}
+                  className="flex-1 px-3 py-2 rounded-lg bg-surface-light/30 border border-border/40 text-text-primary text-sm focus:outline-none"
+                >
+                  <option value="low">{isAr ? "منخفض" : "Low"}</option>
+                  <option value="medium">{isAr ? "متوسط" : "Medium"}</option>
+                  <option value="high">{isAr ? "عالي" : "High"}</option>
+                  <option value="critical">{isAr ? "حرج" : "Critical"}</option>
+                </select>
+                <select
+                  value={newTask.assignedTo}
+                  onChange={(e) => setNewTask((p) => ({ ...p, assignedTo: e.target.value }))}
+                  className="flex-1 px-3 py-2 rounded-lg bg-surface-light/30 border border-border/40 text-text-primary text-sm focus:outline-none"
+                >
+                  <option value="">{isAr ? "غير مسند" : "Unassigned"}</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{isAr ? a.nameAr : a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleCreate}
+                disabled={!newTask.title.trim()}
+                className="w-full py-2 rounded-lg bg-primary text-white font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isAr ? "إنشاء" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4" style={{ direction: "ltr" }}>
           {orderedColumns.map((column) => {
@@ -304,6 +406,67 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove }: Kan
                                     {formatTimeElapsed(task.startTime, locale)}
                                   </span>
                                 </div>
+
+                                {/* Action buttons */}
+                                <div className="mt-2 pt-2 border-t border-border/20" onClick={(e) => e.stopPropagation()}>
+                                  {(task.column === "backlog" || task.column === "todo") && onTaskStart && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); onTaskStart(task.id); }}
+                                      disabled={processingTasks?.has(task.id)}
+                                      className={cn(
+                                        "w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
+                                        processingTasks?.has(task.id)
+                                          ? "bg-green-500/10 text-green-400/50 cursor-wait"
+                                          : "bg-green-500/15 text-green-400 hover:bg-green-500/25 border border-green-500/20"
+                                      )}
+                                    >
+                                      {processingTasks?.has(task.id) ? (
+                                        <><Loader2 size={12} className="animate-spin" />{isAr ? "يعمل..." : "Working..."}</>
+                                      ) : (
+                                        <><Play size={12} />{t("kanban.start") || (isAr ? "ابدأ" : "Start")}</>
+                                      )}
+                                    </button>
+                                  )}
+
+                                  {task.column === "inProgress" && (
+                                    <div className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] text-amber-400">
+                                      <Loader2 size={12} className="animate-spin" />
+                                      <span>{t("kanban.working") || (isAr ? "يعمل..." : "Working...")}</span>
+                                    </div>
+                                  )}
+
+                                  {task.column === "review" && (
+                                    <div className="flex gap-2">
+                                      {onTaskApprove && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); onTaskApprove(task.id); }}
+                                          disabled={processingTasks?.has(task.id)}
+                                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium bg-green-500/15 text-green-400 hover:bg-green-500/25 border border-green-500/20 transition-colors"
+                                        >
+                                          <Check size={12} />
+                                          {t("kanban.approve") || (isAr ? "موافقة" : "Approve")}
+                                        </button>
+                                      )}
+                                      {onTaskReject && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); setFeedbackTaskId(task.id); }}
+                                          disabled={processingTasks?.has(task.id)}
+                                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 transition-colors"
+                                        >
+                                          <RotateCcw size={12} />
+                                          {t("kanban.revise") || (isAr ? "مراجعة" : "Revise")}
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {task.column === "done" && (
+                                    <div className="flex items-center justify-center gap-1.5 py-1 text-[11px] text-green-400/60">
+                                      <Check size={12} />
+                                      <span>{isAr ? "مكتمل" : "Done"}</span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </Draggable>
@@ -332,7 +495,51 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove }: Kan
           locale={locale}
           messages={messages}
           onClose={() => setExpandedTask(null)}
+          onSwitchToConversation={onSwitchToConversation}
         />
+      )}
+
+      {/* Feedback modal for task revision */}
+      {feedbackTaskId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-card w-full max-w-md p-6 relative">
+            <button onClick={() => { setFeedbackTaskId(null); setFeedbackText(""); }} className="absolute top-3 end-3 text-text-muted hover:text-text-primary">
+              <X size={18} />
+            </button>
+            <h3 className="text-lg font-bold text-text-primary mb-4">
+              {isAr ? "ملاحظات المراجعة" : "Revision Feedback"}
+            </h3>
+            <textarea
+              dir="auto"
+              placeholder={t("kanban.feedbackPlaceholder") || (isAr ? "أدخل ملاحظات المراجعة..." : "Enter revision feedback...")}
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 rounded-lg bg-surface-light/30 border border-border/40 text-text-primary text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none mb-3"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setFeedbackTaskId(null); setFeedbackText(""); }}
+                className="flex-1 py-2 rounded-lg bg-surface-light/30 text-text-secondary text-sm hover:bg-surface-light/50 transition-colors"
+              >
+                {t("common.cancel") || (isAr ? "إلغاء" : "Cancel")}
+              </button>
+              <button
+                onClick={() => {
+                  if (feedbackText.trim() && onTaskReject) {
+                    onTaskReject(feedbackTaskId, feedbackText.trim());
+                  }
+                  setFeedbackTaskId(null);
+                  setFeedbackText("");
+                }}
+                disabled={!feedbackText.trim()}
+                className="flex-1 py-2 rounded-lg bg-amber-500/20 text-amber-400 text-sm font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t("kanban.revise") || (isAr ? "مراجعة" : "Send Feedback")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

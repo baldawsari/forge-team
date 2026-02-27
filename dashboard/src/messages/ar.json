@@ -11,7 +11,9 @@
     "memory": "الذاكرة",
     "modelsCost": "النماذج والتكلفة",
     "viadpAudit": "تدقيق التفويض",
-    "settings": "الإعدادات"
+    "settings": "الإعدادات",
+    "conversation": "المحادثة",
+    "voiceTranscripts": "نصوص الصوت"
   },
   "stats": {
     "activeTasks": "المهام النشطة",
@@ -35,7 +37,16 @@
     "agentMessages": "رسائل الوكيل",
     "noMessages": "لا توجد رسائل بعد",
     "unassigned": "غير مسند",
-    "waitingForHuman": "بانتظار الموافقة"
+    "waitingForHuman": "بانتظار الموافقة",
+    "start": "ابدأ",
+    "approve": "موافقة",
+    "revise": "مراجعة",
+    "working": "يعمل...",
+    "feedbackPlaceholder": "أدخل ملاحظات المراجعة...",
+    "viewInConversation": "عرض في المحادثة",
+    "clearDemoData": "مسح البيانات التجريبية",
+    "demoDataBanner": "بيانات تجريبية — أنشئ مهمة للبدء",
+    "demoBadge": "تجريبي"
   },
   "agents": {
     "title": "حالة الوكلاء",
@@ -185,5 +196,13 @@
     "notConfigured": "الصوت غير مفعل",
     "recording": "جارٍ التسجيل...",
     "transcribing": "جارٍ التحويل..."
+  },
+  "partyMode": {
+    "title": "وضع الحفلة",
+    "consulting": "استشارة الوكلاء...",
+    "primary": "أساسي",
+    "secondary": "ثانوي",
+    "tertiary": "إضافي",
+    "askFollowUp": "سؤال متابعة"
   }
 }

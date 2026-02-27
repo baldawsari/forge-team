@@ -149,6 +149,18 @@ export interface CostUpdateEvent {
   model: string;
 }
 
+/** Party Mode agent selection event */
+export interface PartyModeSelectionEvent {
+  sessionId: string;
+  correlationId: string;
+  selections: Array<{
+    agentId: string;
+    role: 'primary' | 'secondary' | 'tertiary';
+    reason: string;
+  }>;
+  timestamp: string;
+}
+
 // ---------------------------------------------------------------------------
 // Socket event map
 // ---------------------------------------------------------------------------
@@ -162,6 +174,7 @@ interface SocketEvents {
   viadp_update: (data: ViadpUpdateEvent) => void;
   workflow_update: (data: WorkflowUpdateEvent) => void;
   cost_update: (data: CostUpdateEvent) => void;
+  party_mode_selection: (data: PartyModeSelectionEvent) => void;
 }
 
 // ---------------------------------------------------------------------------

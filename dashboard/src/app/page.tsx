@@ -24,6 +24,10 @@ import {
   fetchModelCosts,
   fetchViadpDelegations,
   updateTask,
+  createTask,
+  startTask,
+  approveTask,
+  rejectTask,
   type GatewayAgent,
   type ModelAssignment,
 } from "@/lib/api";
@@ -61,7 +65,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "product-owner": {
-    nameAr: "مالك المنتج",
+    nameAr: "جون (مدير المنتج)",
     role: "Requirements & Prioritization",
     roleAr: "المتطلبات والأولويات",
     avatar: "\uD83D\uDCCB",
@@ -69,7 +73,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "business-analyst": {
-    nameAr: "محلل الأعمال",
+    nameAr: "ماري (محللة الأعمال)",
     role: "Research & Analysis",
     roleAr: "البحث والتحليل",
     avatar: "\uD83D\uDCCA",
@@ -77,7 +81,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "scrum-master": {
-    nameAr: "سكرم ماستر",
+    nameAr: "بوب (سكرم ماستر)",
     role: "Agile Coordination",
     roleAr: "التنسيق الرشيق",
     avatar: "\u26A1",
@@ -85,7 +89,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-haiku-4-5",
   },
   architect: {
-    nameAr: "المعماري",
+    nameAr: "ونستون (المعماري)",
     role: "System Design",
     roleAr: "تصميم النظام",
     avatar: "\uD83C\uDFD7\uFE0F",
@@ -93,7 +97,7 @@ const AGENT_META: Record<
     defaultFallback: "gemini-3.1-pro",
   },
   "ux-designer": {
-    nameAr: "مصمم UX/UI",
+    nameAr: "سالي (مصممة UX)",
     role: "User Experience",
     roleAr: "تجربة المستخدم",
     avatar: "\uD83C\uDFA8",
@@ -101,7 +105,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "frontend-dev": {
-    nameAr: "مطور الواجهة",
+    nameAr: "أميليا-FE (مطورة)",
     role: "Frontend Code",
     roleAr: "كود الواجهة",
     avatar: "\uD83D\uDCBB",
@@ -109,7 +113,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "backend-dev": {
-    nameAr: "مطور الخلفية",
+    nameAr: "أميليا-BE (مطورة)",
     role: "Backend & APIs",
     roleAr: "الخلفية والـ APIs",
     avatar: "\u2699\uFE0F",
@@ -117,7 +121,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "qa-architect": {
-    nameAr: "مهندس الجودة",
+    nameAr: "كوين (مهندسة جودة)",
     role: "Testing & QA",
     roleAr: "الاختبار والجودة",
     avatar: "\uD83D\uDD0D",
@@ -125,7 +129,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "devops-engineer": {
-    nameAr: "مهندس DevOps",
+    nameAr: "باري (DevOps)",
     role: "CI/CD & Infrastructure",
     roleAr: "البنية التحتية",
     avatar: "\uD83D\uDE80",
@@ -133,7 +137,7 @@ const AGENT_META: Record<
     defaultFallback: "claude-sonnet-4-6",
   },
   "security-specialist": {
-    nameAr: "الأمن والامتثال",
+    nameAr: "شيلد (الأمن)",
     role: "Security & Compliance",
     roleAr: "الأمن والامتثال",
     avatar: "\uD83D\uDEE1\uFE0F",
@@ -141,7 +145,7 @@ const AGENT_META: Record<
     defaultFallback: "gemini-3.1-pro",
   },
   "tech-writer": {
-    nameAr: "الكاتب التقني",
+    nameAr: "بايج (التوثيق)",
     role: "Documentation",
     roleAr: "التوثيق",
     avatar: "\uD83D\uDCDD",
@@ -269,6 +273,7 @@ function DashboardContent() {
   const [delegations, setDelegations] = useState<DelegationEntry[]>([]);
   const [todayCost, setTodayCost] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [processingTasks, setProcessingTasks] = useState<Set<string>>(new Set());
 
   // Cache model assignments and cost data for mapping
   const assignmentsRef = useRef<Record<string, ModelAssignment>>({});
@@ -297,20 +302,28 @@ function DashboardContent() {
         setTodayCost(results[3].value.summary.totalCost ?? 0);
       }
 
-      // Process agents (needs assignments and costs) - fall back to mockAgents on failure
+      // Process agents (needs assignments and costs) - fall back to mockAgents on failure or empty
       if (results[0].status === "fulfilled") {
         const mapped = results[0].value.agents.map((gw) =>
           mapGatewayAgent(gw, assignmentsRef.current, costByAgentRef.current)
         );
-        setAgents(mapped);
+        if (mapped.length > 0) {
+          setAgents(mapped);
+        } else {
+          setAgents((prev) => (prev.length === 0 ? mockAgents : prev));
+        }
       } else {
         setAgents((prev) => (prev.length === 0 ? mockAgents : prev));
       }
 
-      // Process tasks - fall back to mockTasks on failure
+      // Process tasks - fall back to mockTasks on failure or empty response
       if (results[1].status === "fulfilled") {
         const mapped = results[1].value.tasks.map(mapGatewayTask);
-        setTasks(mapped);
+        if (mapped.length > 0) {
+          setTasks(mapped);
+        } else {
+          setTasks((prev) => (prev.length === 0 ? mockTasks : prev));
+        }
       } else {
         setTasks((prev) => (prev.length === 0 ? mockTasks : prev));
       }
@@ -361,6 +374,16 @@ function DashboardContent() {
       // The gateway task_update event has a nested event object
       const evt = data.event;
       if (!evt) return;
+
+      // Clear processing state for this task
+      setProcessingTasks(prev => {
+        if (prev.has(evt.taskId)) {
+          const s = new Set(prev);
+          s.delete(evt.taskId);
+          return s;
+        }
+        return prev;
+      });
 
       setTasks((prev) => {
         const exists = prev.some((t) => t.id === evt.taskId);
@@ -427,6 +450,13 @@ function DashboardContent() {
       loadData();
     });
 
+    // Real-time cost updates
+    const unsubCost = on("cost_update", (data) => {
+      if (data && typeof data.cost === "number") {
+        setTodayCost(prev => prev + data.cost);
+      }
+    });
+
     return () => {
       unsubStatus();
       unsubTask();
@@ -434,6 +464,7 @@ function DashboardContent() {
       unsubWorkflow();
       unsubSession();
       unsubViadp();
+      unsubCost();
     };
   }, [on, loadData]);
 
@@ -452,6 +483,69 @@ function DashboardContent() {
     updateTask(taskId, { status: columnToStatus[newColumn] ?? newColumn }).catch((err) => {
       console.error("Failed to update task on gateway:", err);
     });
+  }, []);
+
+  const handleTaskCreate = useCallback((task: { title: string; description: string; priority: string; assignedTo?: string }) => {
+    // Optimistically add to local state
+    const tempId = `temp-${Date.now()}`;
+    setTasks((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        title: task.title,
+        titleAr: task.title,
+        description: task.description,
+        descriptionAr: task.description,
+        column: "backlog" as Task["column"],
+        assignedAgent: task.assignedTo ?? null,
+        priority: task.priority as Task["priority"],
+        startTime: new Date().toISOString(),
+      },
+    ]);
+    // Send to gateway
+    createTask({
+      sessionId: "default",
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      assignedTo: task.assignedTo,
+    }).catch((err) => console.error("Failed to create task:", err));
+  }, []);
+
+  const handleTaskStart = useCallback(async (taskId: string) => {
+    setProcessingTasks(prev => new Set(prev).add(taskId));
+    try {
+      await startTask(taskId);
+    } catch (err) {
+      console.error("Failed to start task:", err);
+      setProcessingTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
+    }
+  }, []);
+
+  const handleTaskApprove = useCallback(async (taskId: string) => {
+    setProcessingTasks(prev => new Set(prev).add(taskId));
+    try {
+      await approveTask(taskId);
+    } catch (err) {
+      console.error("Failed to approve task:", err);
+    } finally {
+      setProcessingTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
+    }
+  }, []);
+
+  const handleTaskReject = useCallback(async (taskId: string, feedback: string) => {
+    setProcessingTasks(prev => new Set(prev).add(taskId));
+    try {
+      await rejectTask(taskId, feedback);
+    } catch (err) {
+      console.error("Failed to reject task:", err);
+    } finally {
+      setProcessingTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
+    }
+  }, []);
+
+  const handleSwitchToConversation = useCallback((agentId: string) => {
+    setActiveTab("conversation");
   }, []);
 
   // Computed stats
@@ -475,7 +569,7 @@ function DashboardContent() {
   // Tab heading lookup
   const tabHeadings: Record<string, string> = {
     dashboard: t("nav.dashboard"),
-    conversation: t("nav.conversation") || (locale === "ar" ? "المحادثة" : "Conversation"),
+    conversation: t("nav.conversation"),
     kanban: t("nav.kanban"),
     agents: t("nav.agents"),
     workflows: t("nav.workflows"),
@@ -483,7 +577,7 @@ function DashboardContent() {
     modelsCost: t("nav.modelsCost"),
     viadpAudit: t("nav.viadpAudit"),
     settings: t("nav.settings"),
-    "voice-transcripts": locale === "ar" ? "النصوص الصوتية" : "Voice Transcripts",
+    "voice-transcripts": t("nav.voiceTranscripts"),
   };
 
   // Responsive: detect mobile
@@ -593,6 +687,12 @@ function DashboardContent() {
                     tasks={tasks}
                     agents={agents}
                     onTaskMove={handleTaskMove}
+                    onTaskCreate={handleTaskCreate}
+                    onTaskStart={handleTaskStart}
+                    onTaskApprove={handleTaskApprove}
+                    onTaskReject={handleTaskReject}
+                    processingTasks={processingTasks}
+                    onSwitchToConversation={handleSwitchToConversation}
                   />
                 </div>
 
@@ -610,10 +710,10 @@ function DashboardContent() {
             </>
           )}
 
-          {/* Conversation view */}
-          {activeTab === "conversation" && (
+          {/* Conversation view - kept mounted to preserve session state */}
+          <div style={{ display: activeTab === "conversation" ? "block" : "none" }}>
             <ConversationPanel agents={agents} />
-          )}
+          </div>
 
           {/* Kanban full view */}
           {activeTab === "kanban" && (
@@ -621,6 +721,12 @@ function DashboardContent() {
               tasks={tasks}
               agents={agents}
               onTaskMove={handleTaskMove}
+              onTaskCreate={handleTaskCreate}
+              onTaskStart={handleTaskStart}
+              onTaskApprove={handleTaskApprove}
+              onTaskReject={handleTaskReject}
+              processingTasks={processingTasks}
+              onSwitchToConversation={handleSwitchToConversation}
             />
           )}
 

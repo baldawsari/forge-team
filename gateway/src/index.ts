@@ -29,6 +29,7 @@ import { ModelRouter } from './model-router';
 import { VoiceHandler } from './voice-handler';
 import { GatewayServer } from './server';
 import { AgentRunner } from './agent-runner';
+import { PartyModeEngine } from './party-mode';
 import type { AgentId, AgentMessage, CreateTaskInput } from '@forge-team/shared';
 
 // ---------------------------------------------------------------------------
@@ -642,6 +643,202 @@ app.post('/api/seed', (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Task Orchestration Endpoints
+// ---------------------------------------------------------------------------
+
+const TASK_KEYWORD_CAPABILITIES: Record<string, string[]> = {
+  'architecture|system design|scalability|api design|database schema': ['system-design', 'architecture-review'],
+  'frontend|ui|component|react|css|tailwind|responsive': ['frontend-development', 'component-building'],
+  'backend|api|endpoint|database|server|node|express|postgres': ['backend-development', 'api-design'],
+  'test|qa|quality|bug|regression|coverage': ['test-strategy', 'test-automation'],
+  'deploy|ci.cd|docker|kubernetes|infrastructure|monitoring': ['ci-cd', 'deployment'],
+  'security|auth|owasp|vulnerability|penetration|compliance': ['security-review', 'threat-modeling'],
+  'ux|user experience|wireframe|design|accessibility': ['ui-design', 'ux-research'],
+  'requirement|user story|feature|priority|backlog|prd': ['product-vision', 'backlog-management'],
+  'doc|readme|api doc|guide|knowledge base': ['technical-writing', 'api-documentation'],
+};
+
+function autoAssignAgent(taskTitle: string, taskDescription: string): AgentId | null {
+  const text = `${taskTitle} ${taskDescription}`.toLowerCase();
+  for (const [pattern, capabilities] of Object.entries(TASK_KEYWORD_CAPABILITIES)) {
+    const regex = new RegExp(pattern, 'i');
+    if (regex.test(text)) {
+      for (const cap of capabilities) {
+        const agent = agentManager.findAgentForCapability(cap);
+        if (agent) return agent;
+      }
+    }
+  }
+  return null;
+}
+
+app.post('/api/tasks/:taskId/start', async (req, res) => {
+  try {
+    const task = taskManager.getTask(req.params.taskId);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    // Auto-assign agent if none assigned
+    let assignedAgent = task.assignedTo;
+    if (!assignedAgent) {
+      assignedAgent = autoAssignAgent(task.title, task.description);
+      if (assignedAgent) {
+        taskManager.assignTask(task.id, assignedAgent, 'system');
+        task.assignedTo = assignedAgent;
+      }
+    }
+
+    if (!assignedAgent) {
+      res.status(400).json({ error: 'No suitable agent found for this task' });
+      return;
+    }
+
+    // Move task through Kanban: backlog -> todo -> in-progress
+    if (task.status === 'backlog') taskManager.moveTask(task.id, 'todo', 'system');
+    if (task.status === 'backlog' || task.status === 'todo') taskManager.moveTask(task.id, 'in-progress', 'system');
+
+    agentManager.assignTask(assignedAgent, task.id, task.sessionId);
+
+    // Build task prompt
+    const taskPrompt =
+      `You have been assigned the following task:\n\n` +
+      `TITLE: ${task.title}\n` +
+      `DESCRIPTION: ${task.description}\n` +
+      `PRIORITY: ${task.priority}\n` +
+      `COMPLEXITY: ${task.complexity}\n` +
+      `TAGS: ${task.tags.join(', ')}\n\n` +
+      `Please analyze this task and provide your implementation plan or deliverable.`;
+
+    const result = await agentRunner.processUserMessage(assignedAgent, taskPrompt, task.sessionId);
+
+    // Move to review
+    taskManager.moveTask(task.id, 'review', assignedAgent);
+
+    io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
+
+    res.json({
+      task: taskManager.getTask(task.id),
+      agentId: assignedAgent,
+      response: result.content,
+      model: result.model,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[TaskStart] Error:', error);
+    res.status(500).json({ error: error?.message ?? 'Failed to start task' });
+  }
+});
+
+app.post('/api/tasks/:taskId/approve', (req, res) => {
+  const task = taskManager.getTask(req.params.taskId);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  if (task.status !== 'review') {
+    res.status(400).json({ error: `Task is in "${task.status}" status, must be in "review" to approve` });
+    return;
+  }
+
+  taskManager.moveTask(task.id, 'done', 'user');
+
+  if (task.assignedTo) {
+    agentManager.completeTask(task.assignedTo, task.id);
+  }
+
+  io.emit('task_update', { type: 'completed', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'done' } });
+
+  res.json({
+    task: taskManager.getTask(task.id),
+    status: 'done',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post('/api/tasks/:taskId/reject', async (req, res) => {
+  try {
+    const task = taskManager.getTask(req.params.taskId);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+
+    if (task.status !== 'review') {
+      res.status(400).json({ error: `Task is in "${task.status}" status, must be in "review" to reject` });
+      return;
+    }
+
+    const feedback = req.body?.feedback ?? 'Please revise your work.';
+
+    // Move back to in-progress
+    taskManager.moveTask(task.id, 'in-progress', 'user');
+    io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'in-progress' } });
+
+    let response: string | null = null;
+
+    // If there's an assigned agent, send feedback and get revised response
+    if (task.assignedTo) {
+      const feedbackPrompt =
+        `Your previous work on task "${task.title}" was rejected with the following feedback:\n\n` +
+        `${feedback}\n\n` +
+        `Original task description: ${task.description}\n\n` +
+        `Please revise your work based on the feedback.`;
+
+      const result = await agentRunner.processUserMessage(task.assignedTo, feedbackPrompt, task.sessionId);
+      response = result.content;
+
+      // Move back to review
+      taskManager.moveTask(task.id, 'review', task.assignedTo);
+      io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
+    }
+
+    res.json({
+      task: taskManager.getTask(task.id),
+      feedback,
+      response,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[TaskReject] Error:', error);
+    res.status(500).json({ error: error?.message ?? 'Failed to process rejection' });
+  }
+});
+
+app.post('/api/tasks/:taskId/assign', (req, res) => {
+  const task = taskManager.getTask(req.params.taskId);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  const agentId = req.body?.agentId as AgentId;
+  if (!agentId) {
+    res.status(400).json({ error: 'agentId is required' });
+    return;
+  }
+
+  const agentConfig = agentManager.getConfig(agentId);
+  if (!agentConfig) {
+    res.status(404).json({ error: `Agent "${agentId}" not found` });
+    return;
+  }
+
+  taskManager.assignTask(task.id, agentId, 'user');
+  agentManager.assignTask(agentId, task.id, task.sessionId);
+
+  io.emit('task_update', { type: 'assigned', event: { taskId: task.id, sessionId: task.sessionId, assignedTo: agentId } });
+
+  res.json({
+    task: taskManager.getTask(task.id),
+    assignedTo: agentId,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Create HTTP + WebSocket Server
 // ---------------------------------------------------------------------------
 
@@ -708,87 +905,146 @@ io.on('connection', (socket) => {
 
     console.log(`[Chat] User -> ${payload.to}: "${payload.content.slice(0, 60)}..." (session=${sessionId})`);
 
-    // --- If broadcast, send the message to ALL connected agents in the session ---
     if (isBroadcast) {
-      const allAgents = agentManager.getAllConfigs();
-      for (const agentCfg of allAgents) {
-        const agentId = agentCfg.id as AgentId;
-        if (agentId === 'bmad-master') continue; // bmad-master handled below as primary
-        agentManager.dispatchMessage({
-          ...message,
-          id: uuid(),
-          to: agentId,
-        });
-      }
-    }
+      // --- Party Mode: select relevant agents and get in-character responses ---
+      const partyEngine = new PartyModeEngine();
 
-    // --- Trigger agent reply asynchronously (bmad-master is primary handler for broadcasts) ---
-    const targetAgentId = (isBroadcast ? 'bmad-master' : payload.to) as AgentId;
-    const agentConfig = agentManager.getConfig(targetAgentId);
-
-    if (agentConfig) {
-      // Set agent to working while processing
-      agentManager.setAgentStatus(targetAgentId, 'working');
-
-      agentRunner
-        .processUserMessage(targetAgentId, payload.content, sessionId)
-        .then((result) => {
-          const responseMessage: AgentMessage = {
-            id: uuid(),
-            type: 'chat.response',
-            from: targetAgentId,
-            to: 'user',
-            payload: {
-              content: result.content,
-              data: {
-                model: result.model,
-                inputTokens: result.inputTokens,
-                outputTokens: result.outputTokens,
-              },
-            },
+      partyEngine
+        .executePartyMode(payload.content, sessionId, agentRunner, agentManager)
+        .then((partyResult) => {
+          // Emit agent selection event
+          io.emit('party_mode_selection', {
             sessionId,
-            timestamp: new Date().toISOString(),
+            selections: partyResult.selections,
             correlationId: message.id,
-          };
+          });
 
-          // Record in session history
-          sessionManager.addMessage(sessionId, responseMessage);
+          // Emit each agent response as a separate message
+          for (const resp of partyResult.responses) {
+            const responseMessage: AgentMessage = {
+              id: uuid(),
+              type: 'chat.response',
+              from: resp.agentId as AgentId,
+              to: 'user',
+              payload: {
+                content: resp.content,
+                data: {
+                  model: resp.model,
+                  inputTokens: resp.inputTokens,
+                  outputTokens: resp.outputTokens,
+                  partyMode: true,
+                },
+              },
+              sessionId,
+              timestamp: new Date().toISOString(),
+              correlationId: message.id,
+            };
 
-          // Broadcast to all dashboard connections
-          io.emit('message', responseMessage);
-
-          // Set agent back to idle
-          agentManager.setAgentStatus(targetAgentId, 'idle');
+            sessionManager.addMessage(sessionId, responseMessage);
+            io.emit('message', responseMessage);
+          }
 
           console.log(
-            `[Chat] ${targetAgentId} replied: ${result.content.length} chars ` +
-            `(model=${result.model}, tokens=${result.inputTokens}/${result.outputTokens})`,
+            `[PartyMode] ${partyResult.responses.length} agents responded for broadcast`,
           );
         })
         .catch((error) => {
-          console.error(`[Chat] Agent ${targetAgentId} reply failed:`, error);
+          console.error('[PartyMode] Failed, falling back to bmad-master:', error?.message);
 
-          const errorMessage: AgentMessage = {
-            id: uuid(),
-            type: 'chat.response',
-            from: targetAgentId,
-            to: 'user',
-            payload: {
-              content: `I encountered an error while processing your message. Please try again.`,
-              error: {
-                code: 'AGENT_REPLY_FAILED',
-                message: error?.message ?? 'Unknown error',
-              },
-            },
-            sessionId,
-            timestamp: new Date().toISOString(),
-            correlationId: message.id,
-          };
-
-          sessionManager.addMessage(sessionId, errorMessage);
-          io.emit('message', errorMessage);
-          agentManager.setAgentStatus(targetAgentId, 'idle');
+          // Fallback: single bmad-master response
+          agentManager.setAgentStatus('bmad-master' as AgentId, 'working');
+          agentRunner
+            .processUserMessage('bmad-master' as AgentId, payload.content, sessionId)
+            .then((result) => {
+              const responseMessage: AgentMessage = {
+                id: uuid(),
+                type: 'chat.response',
+                from: 'bmad-master' as AgentId,
+                to: 'user',
+                payload: {
+                  content: result.content,
+                  data: {
+                    model: result.model,
+                    inputTokens: result.inputTokens,
+                    outputTokens: result.outputTokens,
+                  },
+                },
+                sessionId,
+                timestamp: new Date().toISOString(),
+                correlationId: message.id,
+              };
+              sessionManager.addMessage(sessionId, responseMessage);
+              io.emit('message', responseMessage);
+              agentManager.setAgentStatus('bmad-master' as AgentId, 'idle');
+            })
+            .catch((fallbackError) => {
+              console.error('[PartyMode] Fallback also failed:', fallbackError?.message);
+              agentManager.setAgentStatus('bmad-master' as AgentId, 'idle');
+            });
         });
+    } else {
+      // --- Direct message: single agent reply ---
+      const targetAgentId = payload.to as AgentId;
+      const agentConfig = agentManager.getConfig(targetAgentId);
+
+      if (agentConfig) {
+        agentManager.setAgentStatus(targetAgentId, 'working');
+
+        agentRunner
+          .processUserMessage(targetAgentId, payload.content, sessionId)
+          .then((result) => {
+            const responseMessage: AgentMessage = {
+              id: uuid(),
+              type: 'chat.response',
+              from: targetAgentId,
+              to: 'user',
+              payload: {
+                content: result.content,
+                data: {
+                  model: result.model,
+                  inputTokens: result.inputTokens,
+                  outputTokens: result.outputTokens,
+                },
+              },
+              sessionId,
+              timestamp: new Date().toISOString(),
+              correlationId: message.id,
+            };
+
+            sessionManager.addMessage(sessionId, responseMessage);
+            io.emit('message', responseMessage);
+            agentManager.setAgentStatus(targetAgentId, 'idle');
+
+            console.log(
+              `[Chat] ${targetAgentId} replied: ${result.content.length} chars ` +
+              `(model=${result.model}, tokens=${result.inputTokens}/${result.outputTokens})`,
+            );
+          })
+          .catch((error) => {
+            console.error(`[Chat] Agent ${targetAgentId} reply failed:`, error);
+
+            const errorMessage: AgentMessage = {
+              id: uuid(),
+              type: 'chat.response',
+              from: targetAgentId,
+              to: 'user',
+              payload: {
+                content: `I encountered an error while processing your message. Please try again.`,
+                error: {
+                  code: 'AGENT_REPLY_FAILED',
+                  message: error?.message ?? 'Unknown error',
+                },
+              },
+              sessionId,
+              timestamp: new Date().toISOString(),
+              correlationId: message.id,
+            };
+
+            sessionManager.addMessage(sessionId, errorMessage);
+            io.emit('message', errorMessage);
+            agentManager.setAgentStatus(targetAgentId, 'idle');
+          });
+      }
     }
   });
 

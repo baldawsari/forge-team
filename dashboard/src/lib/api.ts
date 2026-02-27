@@ -274,3 +274,21 @@ export async function synthesizeText(
 }> {
   return postAPI('/api/voice/synthesize', { text, language });
 }
+
+// --- Task orchestration ---
+
+export async function startTask(taskId: string): Promise<any> {
+  return postAPI(`/api/tasks/${taskId}/start`, {});
+}
+
+export async function approveTask(taskId: string): Promise<any> {
+  return postAPI(`/api/tasks/${taskId}/approve`, {});
+}
+
+export async function rejectTask(taskId: string, feedback: string): Promise<any> {
+  return postAPI(`/api/tasks/${taskId}/reject`, { feedback });
+}
+
+export async function assignTaskToAgent(taskId: string, agentId: string): Promise<any> {
+  return postAPI(`/api/tasks/${taskId}/assign`, { agentId });
+}

@@ -101,6 +101,7 @@ export class AgentRunner {
     agentId: AgentId,
     userMessage: string,
     sessionId: string,
+    systemPromptOverride?: string,
   ): Promise<AgentRunnerResult> {
     // 1. Get agent config
     const agentConfig = this.agentManager.getConfig(agentId);
@@ -114,15 +115,18 @@ export class AgentRunner {
       };
     }
 
-    // 2. Load SOUL.md (cached)
-    const soulContent = this.loadSoulMd(agentId);
-
-    // 3. Build the full system prompt
-    const systemPrompt = this.buildSystemPrompt(
-      agentConfig.name,
-      agentConfig.role,
-      soulContent,
-    );
+    // 2. Build system prompt (use override if provided, e.g. party mode)
+    let systemPrompt: string;
+    if (systemPromptOverride) {
+      systemPrompt = systemPromptOverride;
+    } else {
+      const soulContent = this.loadSoulMd(agentId);
+      systemPrompt = this.buildSystemPrompt(
+        agentConfig.name,
+        agentConfig.role,
+        soulContent,
+      );
+    }
 
     // 4. Get session message history and convert to chat format
     const history = this.getConversationHistory(agentId, sessionId);
