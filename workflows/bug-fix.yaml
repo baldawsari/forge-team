@@ -1,107 +1,148 @@
+# =============================================================================
+# Bug Fix Pipeline
+# =============================================================================
+# A streamlined workflow for fixing reported bugs, covering the full cycle
+# from reproduction and triage through root cause analysis, fix implementation,
+# verification, and hotfix deployment.
+#
+# Phases: 5 sequential phases optimized for fast turnaround
+# Agents: QA Architect, Product Owner, Backend/Frontend Devs, Security Specialist, DevOps
+# Approval Gates: Verification->Deploy requires human approval before hotfix goes live
+# Model Overrides: None (agents use their default models for speed)
+# Estimated Duration: 1-3 days depending on bug severity and complexity
+# =============================================================================
+
 name: Bug Fix Pipeline
 version: "1.0"
 description: Quick bug fix workflow for triaging, fixing, and verifying bug reports
 
 phases:
+  # ---------------------------------------------------------------------------
+  # Phase 1: Bug Triage
+  # Reproduce the bug, classify its severity, and prioritize the fix.
+  # QA reproduces; Product Owner decides priority and sprint assignment.
+  # ---------------------------------------------------------------------------
   - name: triage
     display_name: "Bug Triage"
     display_name_ar: "فرز الخلل"
     agents: [qa-architect, product-owner]
     steps:
       - name: reproduce_bug
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect reproduces the bug and classifies its severity
         action: reproduce_and_classify
         outputs: [reproduction_steps, severity_assessment, affected_components]
-        approval_required: false
+        approval_required: false              # No human gate needed -- triage should be fast
       - name: prioritize_fix
-        agent: product-owner
+        agent: product-owner                  # Product Owner assesses business priority and assigns to sprint
         action: assess_priority
         inputs: [severity_assessment]
         outputs: [priority_decision, sprint_assignment]
-        depends_on: [reproduce_bug]
-    checkpoint: true
+        depends_on: [reproduce_bug]           # Priority depends on severity classification
+    checkpoint: true                          # Checkpoint: team agrees on priority before investigation
 
+  # ---------------------------------------------------------------------------
+  # Phase 2: Root Cause Analysis
+  # Backend and frontend investigate in parallel, then consolidate findings.
+  # ---------------------------------------------------------------------------
   - name: investigation
     display_name: "Root Cause Analysis"
     display_name_ar: "تحليل السبب الجذري"
     agents: [backend-dev, frontend-dev]
     steps:
       - name: backend_investigation
-        agent: backend-dev
+        agent: backend-dev                    # Backend Dev investigates server-side root causes
         action: investigate_backend
         inputs: [reproduction_steps, affected_components]
         outputs: [root_cause_backend, affected_files_backend]
-        parallel: true
+        parallel: true                        # Runs concurrently with frontend investigation
       - name: frontend_investigation
-        agent: frontend-dev
+        agent: frontend-dev                   # Frontend Dev investigates client-side root causes
         action: investigate_frontend
         inputs: [reproduction_steps, affected_components]
         outputs: [root_cause_frontend, affected_files_frontend]
-        parallel: true
+        parallel: true                        # Runs concurrently with backend investigation
       - name: root_cause_summary
-        agent: backend-dev
+        agent: backend-dev                    # Backend Dev consolidates findings from both tracks
         action: summarize_root_cause
-        depends_on: [backend_investigation, frontend_investigation]
+        depends_on: [backend_investigation, frontend_investigation]  # Waits for both parallel investigations
         outputs: [root_cause_report, fix_approach]
-    checkpoint: true
+    checkpoint: true                          # Checkpoint: root cause confirmed before implementing fix
 
+  # ---------------------------------------------------------------------------
+  # Phase 3: Implement Fix
+  # Apply the fix and write a regression test to prevent recurrence.
+  # ---------------------------------------------------------------------------
   - name: fix
     display_name: "Implement Fix"
     display_name_ar: "تنفيذ الإصلاح"
     agents: [backend-dev, frontend-dev]
     steps:
       - name: implement_fix
-        agent: backend-dev
+        agent: backend-dev                    # Backend Dev applies the code fix based on root cause analysis
         action: apply_fix
         inputs: [root_cause_report, fix_approach]
         outputs: [fix_code, fix_description]
       - name: write_regression_test
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect writes regression tests to prevent recurrence
         action: create_regression_test
         inputs: [reproduction_steps, fix_code]
         outputs: [regression_tests]
-        depends_on: [implement_fix]
-    checkpoint: true
+        depends_on: [implement_fix]           # Tests are written after the fix is available
+    checkpoint: true                          # Checkpoint: fix and tests ready for verification
 
+  # ---------------------------------------------------------------------------
+  # Phase 4: Verification
+  # Run regression tests, perform a quick security scan, and verify the fix.
+  # Human approves the verification report before deployment.
+  # ---------------------------------------------------------------------------
   - name: verification
     display_name: "Verification"
     display_name_ar: "التحقق"
     agents: [qa-architect, security-specialist]
     steps:
       - name: run_regression
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect runs the full regression suite with the fix
         action: run_tests
         inputs: [regression_tests, fix_code]
         outputs: [test_results, coverage_delta]
       - name: quick_security_check
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist performs a quick scan to ensure the fix introduces no vulnerabilities
         action: quick_security_scan
         inputs: [fix_code]
         outputs: [security_clearance]
-        parallel: true
+        parallel: true                        # Runs concurrently with regression tests
       - name: verify_fix
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect confirms the original bug is resolved
         action: verify_bug_fixed
-        depends_on: [run_regression, quick_security_check]
+        depends_on: [run_regression, quick_security_check]  # Waits for both tests and security scan
         outputs: [verification_report]
-        approval_required: true
-    checkpoint: true
+        approval_required: true               # Human reviews verification report before deployment
+    checkpoint: true                          # Checkpoint: fix verified and approved
 
+  # ---------------------------------------------------------------------------
+  # Phase 5: Deploy Fix
+  # Deploy the hotfix to production with a rollback plan.
+  # Requires human approval before going live.
+  # ---------------------------------------------------------------------------
   - name: deploy_fix
     display_name: "Deploy Fix"
     display_name_ar: "نشر الإصلاح"
     agents: [devops-engineer]
     steps:
       - name: hotfix_deploy
-        agent: devops-engineer
+        agent: devops-engineer                # DevOps Engineer deploys the hotfix with a rollback plan
         action: deploy_hotfix
         inputs: [fix_code, verification_report]
         outputs: [deployment_url, rollback_plan]
-        approval_required: true
-    checkpoint: true
+        approval_required: true               # Human approves hotfix deployment to production
+    checkpoint: true                          # Checkpoint: deployment complete, pipeline finished
 
+# ---------------------------------------------------------------------------
+# Phase Transitions
+# Most transitions are automatic for speed; only the final deploy gate requires approval.
+# ---------------------------------------------------------------------------
 transitions:
-  triage -> investigation: auto
-  investigation -> fix: auto
-  fix -> verification: auto
-  verification -> deploy_fix: requires_approval
+  triage -> investigation: auto               # Investigation starts immediately after triage
+  investigation -> fix: auto                  # Fix begins as soon as root cause is identified
+  fix -> verification: auto                   # Verification starts immediately after fix is implemented
+  verification -> deploy_fix: requires_approval  # Human approves before hotfix goes to production

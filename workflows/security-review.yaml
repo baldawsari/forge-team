@@ -1,114 +1,156 @@
+# =============================================================================
+# Security Review Pipeline
+# =============================================================================
+# A comprehensive security audit workflow for reviewing existing codebases
+# and infrastructure. Covers scope definition, static analysis, dynamic
+# analysis (penetration testing), compliance checks, threat modeling,
+# and final reporting.
+#
+# Phases: 7 sequential phases for thorough security assessment
+# Agents: Security Specialist (lead), Architect, QA Architect, Business Analyst, Tech Writer
+# Approval Gates: Threat Modeling->Reporting requires human approval of mitigation plan
+# Model Overrides: Code scanning, API testing, and threat modeling use Claude Opus 4.6
+#                  for deep security reasoning and vulnerability detection
+# Estimated Duration: 3-7 days depending on codebase size and scope
+# =============================================================================
+
 name: Security Review Pipeline
 version: "1.0"
 description: Standalone comprehensive security audit workflow for existing codebases and infrastructure
 
 phases:
+  # ---------------------------------------------------------------------------
+  # Phase 1: Audit Scope Definition
+  # Define what will be audited and map the attack surface.
+  # Security Specialist sets scope; Architect reviews from an architecture perspective.
+  # ---------------------------------------------------------------------------
   - name: scope_definition
     display_name: "Audit Scope Definition"
     display_name_ar: "تحديد نطاق التدقيق"
     agents: [security-specialist, architect]
     steps:
       - name: define_scope
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist defines audit boundaries, assets, and risk categories
         action: define_audit_scope
         outputs: [audit_scope, asset_inventory, risk_categories]
-        approval_required: true
+        approval_required: true               # Human reviews and approves the audit scope before proceeding
       - name: architecture_review
-        agent: architect
+        agent: architect                      # Architect reviews system architecture for security weaknesses and maps attack surface
         action: review_architecture_security
         inputs: [audit_scope, asset_inventory]
         outputs: [architecture_findings, attack_surface_map]
-        depends_on: [define_scope]
-    checkpoint: true
+        depends_on: [define_scope]            # Architecture review needs the defined scope and asset inventory
+    checkpoint: true                          # Checkpoint: scope and attack surface agreed upon
 
+  # ---------------------------------------------------------------------------
+  # Phase 2: Static Code Analysis
+  # Four parallel scans: dependency audit, code vulnerability scan, secret
+  # detection, and code quality review. Code scan uses Claude Opus for deep
+  # static analysis including injection risk detection.
+  # ---------------------------------------------------------------------------
   - name: static_analysis
     display_name: "Static Code Analysis"
     display_name_ar: "التحليل الثابت للكود"
     agents: [security-specialist, qa-architect]
     steps:
       - name: dependency_audit
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist audits third-party dependencies for known CVEs
         action: audit_dependencies
         inputs: [asset_inventory]
         outputs: [dependency_vulnerabilities, outdated_packages, license_issues]
-        parallel: true
+        parallel: true                        # These 4 steps run concurrently for faster analysis
       - name: code_scan
-        agent: security-specialist
-        model_override: claude-opus-4.6
+        agent: security-specialist            # Security Specialist performs deep static code analysis
+        model_override: claude-opus-4.6       # Uses Claude Opus for thorough vulnerability detection (injection risks, code flaws)
         action: static_code_analysis
         inputs: [asset_inventory]
         outputs: [code_vulnerabilities, code_smells, injection_risks]
-        parallel: true
+        parallel: true                        # Runs concurrently with other static analysis steps
       - name: secret_detection
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist scans for exposed secrets and hardcoded credentials
         action: scan_for_secrets
         inputs: [asset_inventory]
         outputs: [exposed_secrets, hardcoded_credentials, env_issues]
-        parallel: true
+        parallel: true                        # Runs concurrently with other static analysis steps
       - name: code_quality_review
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect reviews code quality and maintainability alongside security
         action: review_code_quality
         inputs: [asset_inventory]
         outputs: [quality_report, maintainability_score]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with security-focused scans
+    checkpoint: true                          # Checkpoint: all static findings collected before dynamic testing
 
+  # ---------------------------------------------------------------------------
+  # Phase 3: Dynamic Analysis & Penetration Testing
+  # Active testing of running systems: API security, input validation, auth flows,
+  # and infrastructure. API testing uses Claude Opus for complex attack pattern reasoning.
+  # ---------------------------------------------------------------------------
   - name: dynamic_analysis
     display_name: "Dynamic Analysis & Penetration Testing"
     display_name_ar: "التحليل الديناميكي واختبار الاختراق"
     agents: [security-specialist]
     steps:
       - name: api_security_test
-        agent: security-specialist
-        model_override: claude-opus-4.6
+        agent: security-specialist            # Security Specialist tests API endpoints for auth, rate limiting, and data exposure
+        model_override: claude-opus-4.6       # Uses Claude Opus for complex API attack pattern analysis and auth weakness detection
         action: test_api_security
         outputs: [api_vulnerabilities, auth_weaknesses, rate_limit_issues]
       - name: input_validation_test
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist tests for XSS, SQL injection, and CSRF vulnerabilities
         action: test_input_validation
         outputs: [xss_findings, sqli_findings, csrf_findings]
-        parallel: true
+        parallel: true                        # Runs concurrently with other dynamic tests
       - name: auth_flow_test
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist tests authentication flows, sessions, and privilege escalation
         action: test_authentication
         outputs: [auth_vulnerabilities, session_issues, privilege_escalation]
-        parallel: true
+        parallel: true                        # Runs concurrently with other dynamic tests
       - name: infrastructure_scan
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist scans infrastructure for misconfigurations and exposed services
         action: scan_infrastructure
         outputs: [infra_vulnerabilities, misconfigurations, exposed_services]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with other dynamic tests
+    checkpoint: true                          # Checkpoint: all dynamic findings collected before compliance check
 
+  # ---------------------------------------------------------------------------
+  # Phase 4: Compliance & Standards Check
+  # Verify against OWASP Top 10, data protection regulations (GDPR), and
+  # other regulatory requirements. Business Analyst assists with regulatory context.
+  # ---------------------------------------------------------------------------
   - name: compliance_check
     display_name: "Compliance & Standards Check"
     display_name_ar: "فحص الامتثال والمعايير"
     agents: [security-specialist, business-analyst]
     steps:
       - name: owasp_compliance
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist checks compliance against OWASP Top 10
         action: check_owasp_top10
         outputs: [owasp_report, remediation_priorities]
       - name: data_protection
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist evaluates GDPR compliance, data flows, and PII exposure
         action: check_data_protection
         outputs: [gdpr_compliance, data_flow_analysis, pii_exposure]
-        parallel: true
+        parallel: true                        # Runs concurrently with other compliance checks
       - name: regulatory_review
-        agent: business-analyst
+        agent: business-analyst               # Business Analyst reviews industry-specific regulatory requirements
         action: review_regulatory_requirements
         outputs: [regulatory_gaps, compliance_checklist]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with security-focused compliance checks
+    checkpoint: true                          # Checkpoint: compliance status established before threat modeling
 
+  # ---------------------------------------------------------------------------
+  # Phase 5: Threat Modeling
+  # Build a comprehensive threat model from all prior findings, then plan
+  # mitigations. Uses Claude Opus for sophisticated threat analysis (STRIDE).
+  # ---------------------------------------------------------------------------
   - name: threat_modeling
     display_name: "Threat Modeling"
     display_name_ar: "نمذجة التهديدات"
     agents: [security-specialist, architect]
     steps:
       - name: build_threat_model
-        agent: security-specialist
-        model_override: claude-opus-4.6
+        agent: security-specialist            # Security Specialist synthesizes all findings into a STRIDE threat model
+        model_override: claude-opus-4.6       # Uses Claude Opus for complex threat modeling (STRIDE analysis, risk matrix)
         action: create_threat_model
         inputs:
           - architecture_findings
@@ -117,21 +159,26 @@ phases:
           - api_vulnerabilities
         outputs: [threat_model, stride_analysis, risk_matrix]
       - name: mitigation_planning
-        agent: architect
+        agent: architect                      # Architect designs mitigations and architecture recommendations
         action: plan_mitigations
         inputs: [threat_model, risk_matrix]
         outputs: [mitigation_plan, architecture_recommendations]
-        depends_on: [build_threat_model]
-        approval_required: true
-    checkpoint: true
+        depends_on: [build_threat_model]      # Mitigations depend on the complete threat model
+        approval_required: true               # Human reviews mitigation plan before final report
+    checkpoint: true                          # Checkpoint: threat model and mitigations approved
 
+  # ---------------------------------------------------------------------------
+  # Phase 6: Security Report
+  # Compile all findings into an executive summary, detailed report, and
+  # actionable remediation guide. Tech Writer formats the final deliverables.
+  # ---------------------------------------------------------------------------
   - name: reporting
     display_name: "Security Report"
     display_name_ar: "تقرير الأمان"
     agents: [security-specialist, tech-writer]
     steps:
       - name: compile_findings
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist compiles all findings into a structured report
         action: compile_security_report
         inputs:
           - dependency_vulnerabilities
@@ -142,23 +189,28 @@ phases:
           - mitigation_plan
         outputs: [executive_summary, detailed_findings, risk_scorecard]
       - name: write_report
-        agent: tech-writer
+        agent: tech-writer                    # Tech Writer formats findings into professional deliverables
         action: format_security_report
         inputs: [executive_summary, detailed_findings, risk_scorecard]
         outputs: [security_report, remediation_guide, security_runbook]
-        depends_on: [compile_findings]
+        depends_on: [compile_findings]        # Report formatting needs compiled findings
       - name: present_findings
-        agent: security-specialist
+        agent: security-specialist            # Security Specialist presents findings to stakeholders for sign-off
         action: present_to_stakeholders
         inputs: [security_report]
         outputs: [presentation, action_items]
-        depends_on: [write_report]
-        approval_required: true
-    checkpoint: true
+        depends_on: [write_report]            # Presentation needs the formatted report
+        approval_required: true               # Human reviews final report and signs off on action items
+    checkpoint: true                          # Checkpoint: security review complete, pipeline finished
 
+# ---------------------------------------------------------------------------
+# Phase Transitions
+# Most transitions are automatic to maintain audit momentum.
+# Only the final reporting phase requires approval (after threat model review).
+# ---------------------------------------------------------------------------
 transitions:
-  scope_definition -> static_analysis: auto
-  static_analysis -> dynamic_analysis: auto
-  dynamic_analysis -> compliance_check: auto
-  compliance_check -> threat_modeling: auto
-  threat_modeling -> reporting: requires_approval
+  scope_definition -> static_analysis: auto         # Static analysis begins once scope is defined
+  static_analysis -> dynamic_analysis: auto         # Dynamic testing follows static analysis
+  dynamic_analysis -> compliance_check: auto        # Compliance check follows dynamic testing
+  compliance_check -> threat_modeling: auto          # Threat modeling incorporates all prior findings
+  threat_modeling -> reporting: requires_approval    # Human reviews threat model and mitigations before final report

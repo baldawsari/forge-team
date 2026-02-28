@@ -1,120 +1,166 @@
+# =============================================================================
+# Full SDLC Pipeline
+# =============================================================================
+# A complete software development lifecycle workflow covering all phases
+# from requirements gathering through deployment and documentation.
+#
+# Phases: 6 sequential phases with parallel steps within each
+# Agents: All 12 BMAD agents participate across phases
+# Approval Gates: Design->Development and Testing->Deployment require human approval
+# Model Overrides: Architecture and security tasks use Claude Opus 4.6 for premium reasoning
+# Estimated Duration: 5-10 days depending on project complexity
+# =============================================================================
+
 name: Full SDLC Pipeline
 version: "1.0"
 description: Complete software development lifecycle from requirements to deployment
 
 phases:
+  # ---------------------------------------------------------------------------
+  # Phase 1: Requirements Gathering
+  # Captures user needs and market context before any design or coding begins.
+  # Product Owner drives story creation; Business Analyst provides market intel.
+  # ---------------------------------------------------------------------------
   - name: requirements
     display_name: "Requirements Gathering"
     display_name_ar: "جمع المتطلبات"
     agents: [product-owner, business-analyst]
-    model_override: null
+    model_override: null                      # Default models are sufficient for requirements work
     steps:
       - name: gather_requirements
-        agent: product-owner
+        agent: product-owner                  # PO owns the product backlog and acceptance criteria
         action: gather_and_prioritize
         outputs: [user_stories, acceptance_criteria]
-        approval_required: true
+        approval_required: true               # Human reviews requirements before design begins
       - name: market_analysis
-        agent: business-analyst
+        agent: business-analyst               # BA provides competitive and market context
         action: analyze_market
         outputs: [market_report, competitor_analysis]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with requirements gathering
+    checkpoint: true                          # Checkpoint: team syncs before moving to design
 
+  # ---------------------------------------------------------------------------
+  # Phase 2: Architecture & Design
+  # System architecture and UI/UX design happen in parallel.
+  # Architect uses Claude Opus for complex system design decisions.
+  # ---------------------------------------------------------------------------
   - name: design
     display_name: "Architecture & Design"
     display_name_ar: "التصميم المعماري"
     agents: [architect, ux-designer]
     steps:
       - name: system_architecture
-        agent: architect
-        model_override: claude-opus-4.6
+        agent: architect                      # Architect owns system-level design decisions
+        model_override: claude-opus-4.6       # Uses Claude Opus for complex architecture reasoning (trade-offs, security model, schema design)
         action: design_architecture
         outputs: [system_diagram, api_spec, db_schema, security_model]
-        approval_required: true
+        approval_required: true               # Human reviews architecture before coding begins
       - name: ui_design
-        agent: ux-designer
+        agent: ux-designer                    # UX Designer creates visual specs and RTL layout plan
         action: create_wireframes
         outputs: [wireframes, component_specs, rtl_plan]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with architecture design
+    checkpoint: true                          # Checkpoint: design review before development
 
+  # ---------------------------------------------------------------------------
+  # Phase 3: Development
+  # Frontend and backend are built in parallel, then integrated.
+  # Backend uses Claude Opus for complex API and data layer implementation.
+  # ---------------------------------------------------------------------------
   - name: development
     display_name: "Development"
     display_name_ar: "التطوير"
     agents: [frontend-dev, backend-dev]
     steps:
       - name: frontend_implementation
-        agent: frontend-dev
+        agent: frontend-dev                   # Frontend Dev builds UI from wireframes and component specs
         action: implement_frontend
         inputs: [wireframes, component_specs]
         outputs: [frontend_code, component_library]
-        parallel: true
+        parallel: true                        # Runs concurrently with backend implementation
       - name: backend_implementation
-        agent: backend-dev
-        model_override: claude-opus-4.6
+        agent: backend-dev                    # Backend Dev implements APIs, DB schema, and migrations
+        model_override: claude-opus-4.6       # Uses Claude Opus for complex backend logic (data modeling, API design, migrations)
         action: implement_backend
         inputs: [api_spec, db_schema]
         outputs: [backend_code, api_endpoints, migrations]
-        parallel: true
+        parallel: true                        # Runs concurrently with frontend implementation
       - name: integration
-        agent: backend-dev
+        agent: backend-dev                    # Backend Dev leads integration of frontend and backend
         action: integrate_systems
-        depends_on: [frontend_implementation, backend_implementation]
-    checkpoint: true
+        depends_on: [frontend_implementation, backend_implementation]  # Waits for both parallel tracks to complete
+    checkpoint: true                          # Checkpoint: integration verified before testing
 
+  # ---------------------------------------------------------------------------
+  # Phase 4: Testing & QA
+  # Comprehensive testing including test strategy, automated tests, and security audit.
+  # Both QA Architect and Security Specialist use Claude Opus for thorough analysis.
+  # ---------------------------------------------------------------------------
   - name: testing
     display_name: "Testing & QA"
     display_name_ar: "الاختبار وضمان الجودة"
     agents: [qa-architect, security-specialist]
     steps:
       - name: test_strategy
-        agent: qa-architect
-        model_override: claude-opus-4.6
+        agent: qa-architect                   # QA Architect designs the overall test plan and risk matrix
+        model_override: claude-opus-4.6       # Uses Claude Opus for comprehensive test strategy and risk assessment
         action: create_test_strategy
         outputs: [test_plan, risk_matrix]
       - name: automated_testing
-        agent: qa-architect
+        agent: qa-architect                   # QA Architect executes automated test suites
         action: run_tests
         outputs: [test_results, coverage_report]
       - name: security_audit
-        agent: security-specialist
-        model_override: claude-opus-4.6
+        agent: security-specialist            # Security Specialist performs independent security review
+        model_override: claude-opus-4.6       # Uses Claude Opus for deep security analysis (threat modeling, compliance)
         action: security_review
         outputs: [threat_model, compliance_report]
-        parallel: true
-    checkpoint: true
+        parallel: true                        # Runs concurrently with automated testing
+    checkpoint: true                          # Checkpoint: all tests and security review pass before deployment
 
+  # ---------------------------------------------------------------------------
+  # Phase 5: Deployment
+  # CI/CD pipeline setup and production deployment with human approval gate.
+  # ---------------------------------------------------------------------------
   - name: deployment
     display_name: "Deployment"
     display_name_ar: "النشر"
     agents: [devops-engineer]
     steps:
       - name: ci_cd_setup
-        agent: devops-engineer
+        agent: devops-engineer                # DevOps Engineer configures the CI/CD pipeline and infrastructure
         action: setup_pipeline
         outputs: [pipeline_config, infrastructure]
       - name: deploy
-        agent: devops-engineer
+        agent: devops-engineer                # DevOps Engineer executes the production deployment
         action: deploy_to_environment
-        approval_required: true
+        approval_required: true               # Human approves production deployment after reviewing health checks
         outputs: [deployment_url, health_checks]
-    checkpoint: true
+    checkpoint: true                          # Checkpoint: deployment verified before documentation
 
+  # ---------------------------------------------------------------------------
+  # Phase 6: Documentation
+  # Final documentation covering API docs, user guide, and deployment guide.
+  # ---------------------------------------------------------------------------
   - name: documentation
     display_name: "Documentation"
     display_name_ar: "التوثيق"
     agents: [tech-writer]
     steps:
       - name: generate_docs
-        agent: tech-writer
+        agent: tech-writer                    # Tech Writer produces all project documentation
         action: write_documentation
         outputs: [api_docs, user_guide, deployment_guide]
-    checkpoint: true
+    checkpoint: true                          # Checkpoint: documentation complete, pipeline finished
 
+# ---------------------------------------------------------------------------
+# Phase Transitions
+# "auto" transitions proceed without human intervention.
+# "requires_approval" transitions pause for human review before continuing.
+# ---------------------------------------------------------------------------
 transitions:
-  requirements -> design: auto
-  design -> development: requires_approval
-  development -> testing: auto
-  testing -> deployment: requires_approval
-  deployment -> documentation: auto
+  requirements -> design: auto                # Requirements flow directly into design
+  design -> development: requires_approval    # Human reviews architecture before coding begins
+  development -> testing: auto                # Code goes straight to testing after integration
+  testing -> deployment: requires_approval    # Human reviews test results before production deploy
+  deployment -> documentation: auto           # Documentation proceeds automatically after deployment
