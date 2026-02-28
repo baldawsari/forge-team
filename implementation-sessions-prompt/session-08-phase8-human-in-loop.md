@@ -1277,22 +1277,22 @@ Apply this to the message content rendering in the conversation feed (both main 
 
 After all changes, verify:
 
-- [ ] `npm run build` in `/forge-team/dashboard/` succeeds with zero errors
-- [ ] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds (or passes with existing known issues only)
-- [ ] Gateway has REST endpoints: `/api/interrupts`, `/api/interrupts/:id/resolve`, `/api/workflows/pause-all`, `/api/workflows/resume-all`, `/api/workflows/:id/pause`, `/api/workflows/:id/resume`, `/api/escalations`, `/api/escalations/:id/review`, `/api/escalations/:id/dismiss`, `/api/agents/:id/takeover`, `/api/agents/:id/release`, `/api/agents/:id/human-message`
-- [ ] Socket events `interrupt_update` and `escalation_update` are defined and emitted
-- [ ] `InterruptModal.tsx` exists and renders floating notification badge + approval modal
-- [ ] `EscalationQueue.tsx` exists with filter tabs and review/dismiss actions
-- [ ] `TakeOverBanner.tsx` exists with message input and release button
-- [ ] "Pause All" and "Resume All" buttons appear in WorkflowProgress header
-- [ ] Sidebar has "Escalations" nav item
-- [ ] Agent detail modal has "Take Over" / "Release" button
-- [ ] Taken-over agents show amber ring and "Human Controlled" status
-- [ ] @human and @إنسان mentions in agent messages trigger an interrupt
-- [ ] @human mentions are highlighted in ConversationPanel
-- [ ] Both `ar.json` and `en.json` have all new keys (interrupt, escalation, takeover, workflow control)
-- [ ] Glass-card dark aesthetic is preserved
-- [ ] Full RTL Arabic support maintained
+- [x] `npm run build` in `/forge-team/dashboard/` succeeds with zero errors
+- [x] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds (or passes with existing known issues only)
+- [x] Gateway has REST endpoints: `/api/interrupts`, `/api/interrupts/:id/resolve`, `/api/workflows/pause-all`, `/api/workflows/resume-all`, `/api/workflows/:id/pause`, `/api/workflows/:id/resume`, `/api/escalations`, `/api/escalations/:id/review`, `/api/escalations/:id/dismiss`, `/api/agents/:id/takeover`, `/api/agents/:id/release`, `/api/agents/:id/human-message`
+- [x] Socket events `interrupt_update` and `escalation_update` are defined and emitted
+- [x] `InterruptModal.tsx` exists and renders floating notification badge + approval modal
+- [x] `EscalationQueue.tsx` exists with filter tabs and review/dismiss actions
+- [x] `TakeOverBanner.tsx` exists with message input and release button
+- [x] "Pause All" and "Resume All" buttons appear in WorkflowProgress header
+- [x] Sidebar has "Escalations" nav item
+- [x] Agent detail modal has "Take Over" / "Release" button
+- [x] Taken-over agents show amber ring and "Human Controlled" status
+- [x] @human and @إنسان mentions in agent messages trigger an interrupt
+- [x] @human mentions are highlighted in ConversationPanel
+- [x] Both `ar.json` and `en.json` have all new keys (interrupt, escalation, takeover, workflow control)
+- [x] Glass-card dark aesthetic is preserved
+- [x] Full RTL Arabic support maintained
 
 ---
 
