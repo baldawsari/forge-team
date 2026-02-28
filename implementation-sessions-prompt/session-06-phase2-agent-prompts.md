@@ -622,22 +622,22 @@ if (lastError) {
 
 After all fixes, verify:
 
-- [ ] `npx tsc --noEmit` passes in the `gateway/` package
-- [ ] All 12 agent config.json files are valid JSON (no trailing commas, no syntax errors)
-- [ ] All 12 agent config.json files have updated `systemPromptTemplate` fields
-- [ ] `buildSystemPrompt()` takes a `modelId` parameter and returns model-specific preambles
-- [ ] Opus agents (architect, backend-dev, qa-architect, security-specialist) get "Think step by step" preamble
-- [ ] Gemini Pro agents get "Use your file search capability" preamble
-- [ ] Flash agent (scrum-master) gets "bullet points only, max 5 items" preamble
-- [ ] Sonnet agent (tech-writer) gets balanced precision preamble
-- [ ] `spawnSubAgent()` method exists on AgentRunner and checks `canDelegate()` permissions
-- [ ] `[DELEGATE: @agent-id]` markers in Opus responses trigger sub-agent calls
-- [ ] `sanitizeInput()` strips prompt injection patterns
-- [ ] System prompt ends with a boundary marker
-- [ ] `GET /api/health/providers` endpoint exists and returns provider status
-- [ ] Both `callAnthropic()` and `callGemini()` have timing logs
-- [ ] Retry logic handles 429/503/529 errors with exponential backoff
-- [ ] No string `gpt-4o` or `gpt-4o-mini` appears anywhere in modified files
+- [x] `npx tsc --noEmit` passes in the `gateway/` package
+- [x] All 12 agent config.json files are valid JSON (no trailing commas, no syntax errors)
+- [x] All 12 agent config.json files have updated `systemPromptTemplate` fields
+- [x] `buildSystemPrompt()` takes a `modelId` parameter and returns model-specific preambles
+- [x] Opus agents (architect, backend-dev, qa-architect, security-specialist) get "Think step by step" preamble
+- [x] Gemini Pro agents get "Use your file search capability" preamble
+- [x] Flash agent (scrum-master) gets "bullet points only, max 5 items" preamble
+- [x] Sonnet agent (tech-writer) gets balanced precision preamble
+- [x] `spawnSubAgent()` method exists on AgentRunner and checks `canDelegate()` permissions
+- [x] `[DELEGATE: @agent-id]` markers in Opus responses trigger sub-agent calls
+- [x] `sanitizeInput()` strips prompt injection patterns
+- [x] System prompt ends with a boundary marker
+- [x] `GET /api/health/providers` endpoint exists and returns provider status
+- [x] Both `callAnthropic()` and `callGemini()` have timing logs
+- [x] Retry logic handles 429/503/529 errors with exponential backoff
+- [x] No string `gpt-4o` or `gpt-4o-mini` appears anywhere in modified files
 
 ---
 
