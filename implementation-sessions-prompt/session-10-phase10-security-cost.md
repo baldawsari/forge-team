@@ -740,55 +740,55 @@ Create a team with these agents working in parallel:
 After all work is complete, verify:
 
 **Security (CRITICAL):**
-- [ ] `/forge-team/.env.example` contains ZERO real API keys — only placeholder strings
-- [ ] `/forge-team/.env` contains ZERO real API keys — only placeholder strings
-- [ ] `.env` and `.env.local` are in `.gitignore`
-- [ ] `grep -r "sk-ant-api03" /forge-team/` returns zero results
-- [ ] `grep -r "AIzaSy" /forge-team/ --include="*.md" --include="*.ts" --include="*.json" --include="*.env*" --include="*.yml"` returns zero results (except this prompt file)
-- [ ] `grep -r "sk_d5d81d3" /forge-team/` returns zero results
-- [ ] `grep -r "sk-proj-" /forge-team/` returns zero results
+- [x] `/forge-team/.env.example` contains ZERO real API keys — only placeholder strings
+- [x] `/forge-team/.env` contains ZERO real API keys — only placeholder strings
+- [x] `.env` and `.env.local` are in `.gitignore`
+- [x] `grep -r "sk-ant-api03" /forge-team/` returns zero results
+- [x] `grep -r "AIzaSy" /forge-team/ --include="*.md" --include="*.ts" --include="*.json" --include="*.env*" --include="*.yml"` returns zero results (except this prompt file)
+- [x] `grep -r "sk_d5d81d3" /forge-team/` returns zero results
+- [x] `grep -r "sk-proj-" /forge-team/` returns zero results
 
 **Authentication:**
-- [ ] `jsonwebtoken` is in gateway `package.json` dependencies
-- [ ] `/forge-team/gateway/src/auth.ts` exists with `generateToken()`, `verifyToken()`, role types
-- [ ] WebSocket connections require JWT token (query param or first message)
-- [ ] Unauthenticated connections are disconnected after 10 seconds in production mode
-- [ ] Development mode bypass works when `NODE_ENV=development` and `FORCE_AUTH` is not set
-- [ ] Auth REST endpoints respond: `POST /api/auth/token`, `GET /api/auth/verify`
-- [ ] Socket.IO middleware validates JWT
+- [x] `jsonwebtoken` is in gateway `package.json` dependencies
+- [x] `/forge-team/gateway/src/auth.ts` exists with `generateToken()`, `verifyToken()`, role types
+- [x] WebSocket connections require JWT token (query param or first message)
+- [x] Unauthenticated connections are disconnected after 10 seconds in production mode
+- [x] Development mode bypass works when `NODE_ENV=development` and `FORCE_AUTH` is not set
+- [x] Auth REST endpoints respond: `POST /api/auth/token`, `GET /api/auth/verify`
+- [x] Socket.IO middleware validates JWT
 
 **Infrastructure:**
-- [ ] Postgres port bound to `127.0.0.1:5432` in `docker-compose.yml`
-- [ ] Redis port bound to `127.0.0.1:6379` in `docker-compose.yml`
-- [ ] Redis requires password via `--requirepass`
-- [ ] `gateway.Dockerfile` line 37 is `RUN npx tsc --noEmit` (NO `|| true`)
-- [ ] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds with zero errors
+- [x] Postgres port bound to `127.0.0.1:5432` in `docker-compose.yml`
+- [x] Redis port bound to `127.0.0.1:6379` in `docker-compose.yml`
+- [x] Redis requires password via `--requirepass`
+- [x] `gateway.Dockerfile` line 37 is `RUN npx tsc --noEmit` (NO `|| true`)
+- [x] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds with zero errors
 
 **RBAC:**
-- [ ] `/forge-team/gateway/src/rbac.ts` exists with role definitions and `hasPermission()`
-- [ ] `dashboard-viewer` role CANNOT send `chat.message`, `task.create`, `task.update`, `tool.execute`
-- [ ] `agent` role CANNOT `session.create` or `session.destroy`
-- [ ] `admin` role has access to everything
-- [ ] RBAC check runs in `handleMessage()` before any processing
+- [x] `/forge-team/gateway/src/rbac.ts` exists with role definitions and `hasPermission()`
+- [x] `dashboard-viewer` role CANNOT send `chat.message`, `task.create`, `task.update`, `tool.execute`
+- [x] `agent` role CANNOT `session.create` or `session.destroy`
+- [x] `admin` role has access to everything
+- [x] RBAC check runs in `handleMessage()` before any processing
 
 **Cost Controls:**
-- [ ] `model_configs` table has `daily_cap_usd`, `weekly_cap_usd`, `alert_threshold` columns
-- [ ] `ModelRouter.route()` checks cost caps before selecting a model
-- [ ] When cap exceeded, model auto-downgrades to cheapest available
-- [ ] When alert threshold crossed, `cost.alert` WS event is broadcast to dashboards
-- [ ] `pg` is in gateway dependencies for database persistence
-- [ ] `/forge-team/gateway/src/db.ts` exists with database connection utility
-- [ ] Cost records are persisted to `cost_tracking` table
-- [ ] Cost caps REST endpoints respond: `GET /api/costs/summary`, `GET /api/costs/agent/:agentId`, `PUT /api/costs/caps/:agentId`, `GET /api/costs/caps`
+- [x] `model_configs` table has `daily_cap_usd`, `weekly_cap_usd`, `alert_threshold` columns
+- [x] `ModelRouter.route()` checks cost caps before selecting a model
+- [x] When cap exceeded, model auto-downgrades to cheapest available
+- [x] When alert threshold crossed, `cost.alert` WS event is broadcast to dashboards
+- [x] `pg` is in gateway dependencies for database persistence
+- [x] `/forge-team/gateway/src/db.ts` exists with database connection utility
+- [x] Cost records are persisted to `cost_tracking` table
+- [x] Cost caps REST endpoints respond: `GET /api/costs/summary`, `GET /api/costs/agent/:agentId`, `PUT /api/costs/caps/:agentId`, `GET /api/costs/caps`
 
 **Audit:**
-- [ ] `/forge-team/gateway/src/audit-middleware.ts` exists
-- [ ] Every inbound and outbound WS message is logged with hash-chain integrity
-- [ ] Hash uses SHA-256 (not FNV-1a or polynomial)
-- [ ] `verifyIntegrity()` re-computes all hashes and verifies the chain
-- [ ] Audit REST endpoints respond: `GET /api/audit`, `GET /api/audit/verify`
-- [ ] `audit_log` table exists in `init.sql`
+- [x] `/forge-team/gateway/src/audit-middleware.ts` exists
+- [x] Every inbound and outbound WS message is logged with hash-chain integrity
+- [x] Hash uses SHA-256 (not FNV-1a or polynomial)
+- [x] `verifyIntegrity()` re-computes all hashes and verifies the chain
+- [x] Audit REST endpoints respond: `GET /api/audit`, `GET /api/audit/verify`
+- [x] `audit_log` table exists in `init.sql`
 
 **General:**
-- [ ] All existing gateway functionality is preserved — no existing switch cases, routes, or handlers were removed
-- [ ] No new npm packages were added beyond `jsonwebtoken`, `@types/jsonwebtoken`, `pg`, `@types/pg`
+- [x] All existing gateway functionality is preserved — no existing switch cases, routes, or handlers were removed
+- [x] No new npm packages were added beyond `jsonwebtoken`, `@types/jsonwebtoken`, `pg`, `@types/pg`
