@@ -6,7 +6,7 @@
  * task management, delegation protocol, and real-time dashboard updates.
  *
  * Architecture:
- * - Express HTTP server on port 3001 (health checks, REST API)
+ * - Express HTTP server on port 18789 (health checks, REST API)
  * - WebSocket server on the same port (real-time communication)
  * - SessionManager: session lifecycle management
  * - AgentManager: agent configuration, state, and dispatch
@@ -30,13 +30,16 @@ import { VoiceHandler } from './voice-handler';
 import { GatewayServer } from './server';
 import { AgentRunner } from './agent-runner';
 import { PartyModeEngine } from './party-mode';
+import { OpenClawAgentRegistry, MessageBus, ToolRunner } from './openclaw';
+import { WorkflowExecutor } from './workflow-engine';
+import { resolve } from 'path';
 import type { AgentId, AgentMessage, CreateTaskInput } from '@forge-team/shared';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const PORT = parseInt(process.env.GATEWAY_PORT ?? '3001', 10);
+const PORT = parseInt(process.env.GATEWAY_PORT ?? '18789', 10);
 const HOST = process.env.GATEWAY_HOST ?? '0.0.0.0';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +77,22 @@ const agentRunner = new AgentRunner({
   sessionManager,
 });
 console.log('[Init] AgentRunner initialized');
+
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+
+const messageBus = new MessageBus({ redisUrl: REDIS_URL });
+const agentRegistry = new OpenClawAgentRegistry(agentManager);
+const toolRunner = new ToolRunner();
+console.log('[Init] OpenClaw components initialized (Redis:', REDIS_URL, ')');
+
+const workflowExecutor = new WorkflowExecutor({
+  workflowsDir: resolve(__dirname, '../../workflows'),
+  agentManager,
+  modelRouter,
+  viadpEngine,
+  databaseUrl: process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam',
+});
+console.log('[Init] WorkflowExecutor initialized');
 
 // ---------------------------------------------------------------------------
 // Express HTTP Server
@@ -285,6 +304,11 @@ app.get('/api/viadp/delegations', (req, res) => {
   res.json({ delegations, timestamp: new Date().toISOString() });
 });
 
+app.get('/api/viadp/trust', (_req, res) => {
+  const trustScores = viadpEngine.getGlobalTrustScores();
+  res.json({ trustScores, timestamp: new Date().toISOString() });
+});
+
 /**
  * VIADP trust scores endpoint.
  */
@@ -350,6 +374,94 @@ app.post('/api/voice/synthesize', async (req, res) => {
   } catch (error: any) {
     console.error('[Voice] Synthesize error:', error);
     res.status(500).json({ error: error?.message ?? 'Synthesis failed' });
+  }
+});
+
+// -- OpenClaw REST endpoints --
+
+app.get('/api/openclaw/agents', (_req, res) => {
+  const agents = agentRegistry.getAllWithCapabilities();
+  res.json({ agents, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/openclaw/tools', (_req, res) => {
+  const tools = toolRunner.listTools();
+  res.json({ tools, timestamp: new Date().toISOString() });
+});
+
+app.post('/api/openclaw/tools/:name/execute', express.json(), async (req, res) => {
+  try {
+    const result = await toolRunner.executeTool(req.params.name, req.body.input ?? {}, {
+      sessionId: req.body.sessionId,
+      agentId: req.body.agentId,
+    });
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Tool execution failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Workflow REST Endpoints
+// ---------------------------------------------------------------------------
+
+app.get('/api/workflows', (_req, res) => {
+  try {
+    const definitions = workflowExecutor.listDefinitions();
+    res.json({ workflows: definitions, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to list workflows' });
+  }
+});
+
+app.post('/api/workflows/start', express.json(), async (req, res) => {
+  try {
+    const { definitionName, sessionId } = req.body;
+    if (!definitionName || !sessionId) {
+      res.status(400).json({ error: 'definitionName and sessionId are required' });
+      return;
+    }
+    const instance = await workflowExecutor.startWorkflow(definitionName, sessionId);
+    res.json({ instance, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to start workflow' });
+  }
+});
+
+app.post('/api/workflows/:instanceId/pause', async (req, res) => {
+  try {
+    await workflowExecutor.pauseWorkflow(req.params.instanceId);
+    res.json({ status: 'paused', timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to pause workflow' });
+  }
+});
+
+app.post('/api/workflows/:instanceId/resume', express.json(), async (req, res) => {
+  try {
+    const { approvalData } = req.body;
+    await workflowExecutor.resumeWorkflow(req.params.instanceId, approvalData);
+    res.json({ status: 'resumed', timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to resume workflow' });
+  }
+});
+
+app.get('/api/workflows/:instanceId/progress', async (req, res) => {
+  try {
+    const progress = await workflowExecutor.getProgress(req.params.instanceId);
+    res.json({ progress, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to get progress' });
+  }
+});
+
+app.post('/api/workflows/:instanceId/cancel', async (req, res) => {
+  try {
+    await workflowExecutor.cancelWorkflow(req.params.instanceId);
+    res.json({ status: 'cancelled', timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? 'Failed to cancel workflow' });
   }
 });
 
@@ -882,6 +994,10 @@ const gatewayServer = new GatewayServer({
   viadpEngine,
   modelRouter,
   voiceHandler,
+  messageBus,
+  agentRegistry,
+  toolRunner,
+  workflowExecutor,
 });
 
 gatewayServer.attach(httpServer);
@@ -1312,4 +1428,5 @@ export {
   modelRouter,
   voiceHandler,
   agentRunner,
+  workflowExecutor,
 };

@@ -61,9 +61,9 @@ RUN chown -R forgeteam:forgeteam /app
 USER forgeteam
 
 ENV NODE_ENV=production
-ENV PORT=3001
+ENV PORT=18789
 
-EXPOSE 3001
+EXPOSE 18789
 
 WORKDIR /app/gateway
 

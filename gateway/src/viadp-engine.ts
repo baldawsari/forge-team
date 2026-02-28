@@ -32,6 +32,12 @@ import type {
   RiskLevel,
 } from '@forge-team/shared';
 import type { AgentManager } from './agent-manager';
+import {
+  DelegationEngine as ViadpDelegationEngine,
+  TrustManager as ViadpTrustManager,
+  AuditLog as ViadpAuditLog,
+  ResilienceEngine as ViadpResilienceEngine,
+} from '@forge-team/viadp';
 
 // ---------------------------------------------------------------------------
 // Events
@@ -80,9 +86,20 @@ export class VIADPEngine extends EventEmitter<VIADPEvents> {
   /** Timer for monitoring active delegations */
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
 
+  private viadpDelegation: ViadpDelegationEngine;
+  private viadpTrust: ViadpTrustManager;
+  private viadpAudit: ViadpAuditLog;
+  private viadpResilience: ViadpResilienceEngine;
+
   constructor(agentManager: AgentManager) {
     super();
     this.agentManager = agentManager;
+
+    this.viadpDelegation = new ViadpDelegationEngine();
+    this.viadpTrust = new ViadpTrustManager();
+    this.viadpAudit = new ViadpAuditLog();
+    this.viadpResilience = new ViadpResilienceEngine();
+
     this.initializeTrustScores();
 
     // Monitor active delegations every 60 seconds
@@ -515,6 +532,10 @@ export class VIADPEngine extends EventEmitter<VIADPEvents> {
       }
     }
     return scores;
+  }
+
+  getGlobalTrustScores(): TrustScore[] {
+    return Array.from(this.trustScores.values());
   }
 
   /**

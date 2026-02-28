@@ -20,10 +20,12 @@
     "noFallthroughCasesInSwitch": true,
     "paths": {
       "@forge-team/shared": ["../shared/types/index.ts"],
-      "@forge-team/shared/*": ["../shared/*"]
+      "@forge-team/shared/*": ["../shared/*"],
+      "@forge-team/viadp": ["../viadp/src/index.ts"],
+      "@forge-team/viadp/*": ["../viadp/src/*"]
     },
     "baseUrl": "."
   },
-  "include": ["src/**/*", "../shared/**/*"],
+  "include": ["src/**/*", "../shared/**/*", "../viadp/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

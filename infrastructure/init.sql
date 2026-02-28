@@ -464,3 +464,18 @@ INSERT INTO trust_scores (agent_id, score, alpha, beta) VALUES
     ('security-specialist', 0.5, 2.0, 2.0),
     ('tech-writer', 0.5, 2.0, 2.0)
 ON CONFLICT (agent_id) DO NOTHING;
+
+-- =============================================================================
+-- Workflow Checkpoints (LangGraph persistence)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workflow_checkpoints (
+    id              TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    instance_id     TEXT NOT NULL,
+    thread_id       TEXT NOT NULL,
+    checkpoint_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metadata        JSONB DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wf_checkpoints_instance ON workflow_checkpoints (instance_id);
+CREATE INDEX IF NOT EXISTS idx_wf_checkpoints_thread ON workflow_checkpoints (thread_id);

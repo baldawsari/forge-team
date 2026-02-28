@@ -20,6 +20,10 @@ import type { TaskManager } from './task-manager';
 import type { VIADPEngine } from './viadp-engine';
 import type { ModelRouter } from './model-router';
 import type { VoiceHandler } from './voice-handler';
+import type { MessageBus } from './openclaw/message-bus';
+import type { OpenClawAgentRegistry } from './openclaw/agent-registry';
+import type { ToolRunner } from './openclaw/tool-runner';
+import type { WorkflowExecutor } from './workflow-engine';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +87,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
   private viadpEngine: VIADPEngine;
   private modelRouter: ModelRouter;
   private voiceHandler: VoiceHandler;
+  private messageBus: MessageBus | null;
+  private agentRegistry: OpenClawAgentRegistry | null;
+  private toolRunner: ToolRunner | null;
+  private workflowExecutor: WorkflowExecutor | null;
 
   constructor(deps: {
     sessionManager: SessionManager;
@@ -91,6 +99,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     viadpEngine: VIADPEngine;
     modelRouter: ModelRouter;
     voiceHandler: VoiceHandler;
+    messageBus?: MessageBus;
+    agentRegistry?: OpenClawAgentRegistry;
+    toolRunner?: ToolRunner;
+    workflowExecutor?: WorkflowExecutor;
   }) {
     super();
     this.sessionManager = deps.sessionManager;
@@ -99,6 +111,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     this.viadpEngine = deps.viadpEngine;
     this.modelRouter = deps.modelRouter;
     this.voiceHandler = deps.voiceHandler;
+    this.messageBus = deps.messageBus ?? null;
+    this.agentRegistry = deps.agentRegistry ?? null;
+    this.toolRunner = deps.toolRunner ?? null;
+    this.workflowExecutor = deps.workflowExecutor ?? null;
   }
 
   /**
@@ -355,6 +371,35 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       case 'voice.status':
         this.handleVoiceStatus(clientId);
         break;
+      case 'voice.transcribe':
+        this.handleVoiceTranscribe(clientId, parsed);
+        break;
+      case 'voice.synthesize':
+        this.handleVoiceSynthesize(clientId, parsed);
+        break;
+      case 'voice.languages':
+        this.handleVoiceLanguages(clientId);
+        break;
+
+      // -- Workflow control --
+      case 'workflow.list':
+        this.handleWorkflowList(clientId);
+        break;
+      case 'workflow.start':
+        this.handleWorkflowStart(clientId, parsed);
+        break;
+      case 'workflow.pause':
+        this.handleWorkflowPause(clientId, parsed);
+        break;
+      case 'workflow.resume':
+        this.handleWorkflowResume(clientId, parsed);
+        break;
+      case 'workflow.progress':
+        this.handleWorkflowProgress(clientId, parsed);
+        break;
+      case 'workflow.cancel':
+        this.handleWorkflowCancel(clientId, parsed);
+        break;
 
       // -- System --
       case 'ping':
@@ -365,6 +410,81 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
           sessionId: parsed.sessionId ?? '',
         });
         break;
+
+      // -- OpenClaw messages --
+      case 'openclaw.agent.register': {
+        const { agentId, capabilities } = parsed.payload ?? {};
+        if (this.agentRegistry && agentId) {
+          this.agentRegistry.register(agentId, { capabilities: capabilities ?? [] });
+        }
+        this.sendToClient(clientId, {
+          type: 'openclaw.agent.registered',
+          payload: { agentId, success: true },
+          timestamp: new Date().toISOString(),
+          sessionId: parsed.sessionId ?? '',
+        });
+        break;
+      }
+      case 'openclaw.agent.heartbeat': {
+        const agentId = parsed.payload?.agentId;
+        if (this.agentRegistry && agentId) {
+          this.agentRegistry.heartbeat(agentId);
+        }
+        this.sendToClient(clientId, {
+          type: 'openclaw.agent.heartbeat.ack',
+          payload: { agentId, timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          sessionId: parsed.sessionId ?? '',
+        });
+        break;
+      }
+      case 'openclaw.agent.capabilities': {
+        const agentId = parsed.payload?.agentId;
+        const capabilities = this.agentRegistry?.getCapabilities(agentId) ?? null;
+        this.sendToClient(clientId, {
+          type: 'openclaw.agent.capabilities',
+          payload: { agentId, capabilities },
+          timestamp: new Date().toISOString(),
+          sessionId: parsed.sessionId ?? '',
+        });
+        break;
+      }
+      case 'openclaw.tool.list': {
+        const tools = this.toolRunner?.listTools() ?? [];
+        this.sendToClient(clientId, {
+          type: 'openclaw.tool.list',
+          payload: { tools },
+          timestamp: new Date().toISOString(),
+          sessionId: parsed.sessionId ?? '',
+        });
+        break;
+      }
+      case 'openclaw.tool.execute': {
+        const { name, input } = parsed.payload ?? {};
+        if (this.toolRunner && name) {
+          this.toolRunner.executeTool(name, input ?? {}, {
+            sessionId: parsed.sessionId,
+            agentId: parsed.payload?.agentId,
+          }).then((result) => {
+            this.sendToClient(clientId, {
+              type: 'openclaw.tool.result',
+              payload: result,
+              timestamp: new Date().toISOString(),
+              sessionId: parsed.sessionId ?? '',
+            });
+          }).catch((error: any) => {
+            this.sendToClient(clientId, {
+              type: 'openclaw.tool.error',
+              payload: { error: error?.message ?? 'Tool execution failed' },
+              timestamp: new Date().toISOString(),
+              sessionId: parsed.sessionId ?? '',
+            });
+          });
+        } else {
+          this.sendError(clientId, 'TOOL_NAME_REQUIRED', 'Tool name is required');
+        }
+        break;
+      }
 
       default:
         this.sendToClient(clientId, {
@@ -981,6 +1101,234 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
   }
 
   // =========================================================================
+  // Voice WS Handlers (STT/TTS)
+  // =========================================================================
+
+  private async handleVoiceTranscribe(clientId: string, msg: WSMessage): Promise<void> {
+    try {
+      const audioData = msg.payload?.audio;
+      const language = msg.payload?.language;
+
+      if (!audioData) {
+        this.sendError(clientId, 'AUDIO_REQUIRED', 'audio (base64) is required for transcription');
+        return;
+      }
+
+      const audioBuffer = Buffer.from(audioData, 'base64');
+      const result = await this.voiceHandler.transcribe(audioBuffer, language);
+
+      this.sendToClient(clientId, {
+        type: 'voice.transcribed',
+        payload: result,
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+
+      this.broadcastToDashboards({
+        type: 'voice.transcribed',
+        payload: result,
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'TRANSCRIBE_FAILED', error?.message ?? 'Transcription failed');
+    }
+  }
+
+  private async handleVoiceSynthesize(clientId: string, msg: WSMessage): Promise<void> {
+    try {
+      const text = msg.payload?.text;
+      const language = msg.payload?.language ?? 'en';
+      const voiceId = msg.payload?.voiceId;
+
+      if (!text) {
+        this.sendError(clientId, 'TEXT_REQUIRED', 'text is required for synthesis');
+        return;
+      }
+
+      const result = await this.voiceHandler.synthesize({
+        text,
+        language,
+        voiceId,
+      });
+
+      this.sendToClient(clientId, {
+        type: 'voice.synthesized',
+        payload: {
+          audio: result.audioBase64,
+          durationMs: result.durationMs,
+          language,
+        },
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+
+      this.broadcastToDashboards({
+        type: 'voice.synthesized',
+        payload: {
+          text,
+          durationMs: result.durationMs,
+          language,
+        },
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'SYNTHESIZE_FAILED', error?.message ?? 'Synthesis failed');
+    }
+  }
+
+  private handleVoiceLanguages(clientId: string): void {
+    this.sendToClient(clientId, {
+      type: 'voice.languages',
+      payload: {
+        stt: ['en', 'ar', 'en-US', 'ar-SA'],
+        tts: ['en', 'ar', 'en-US', 'ar-SA'],
+        default: 'ar',
+      },
+      timestamp: new Date().toISOString(),
+      sessionId: '',
+    });
+  }
+
+  // =========================================================================
+  // Workflow WS Handlers
+  // =========================================================================
+
+  private handleWorkflowList(clientId: string): void {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const definitions = this.workflowExecutor.listDefinitions();
+      this.sendToClient(clientId, {
+        type: 'workflow.list',
+        payload: { workflows: definitions },
+        timestamp: new Date().toISOString(),
+        sessionId: '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_LIST_FAILED', error?.message ?? 'Failed to list workflows');
+    }
+  }
+
+  private async handleWorkflowStart(clientId: string, msg: WSMessage): Promise<void> {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const { definitionName, sessionId } = msg.payload ?? {};
+      if (!definitionName || !sessionId) {
+        this.sendError(clientId, 'INVALID_PARAMS', 'definitionName and sessionId are required');
+        return;
+      }
+      const instance = await this.workflowExecutor.startWorkflow(definitionName, sessionId);
+      this.sendToClient(clientId, {
+        type: 'workflow.started',
+        payload: instance,
+        timestamp: new Date().toISOString(),
+        sessionId,
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_START_FAILED', error?.message ?? 'Failed to start workflow');
+    }
+  }
+
+  private async handleWorkflowPause(clientId: string, msg: WSMessage): Promise<void> {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const instanceId = msg.payload?.instanceId;
+      if (!instanceId) {
+        this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+        return;
+      }
+      await this.workflowExecutor.pauseWorkflow(instanceId);
+      this.sendToClient(clientId, {
+        type: 'workflow.paused',
+        payload: { instanceId },
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_PAUSE_FAILED', error?.message ?? 'Failed to pause workflow');
+    }
+  }
+
+  private async handleWorkflowResume(clientId: string, msg: WSMessage): Promise<void> {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const { instanceId, approvalData } = msg.payload ?? {};
+      if (!instanceId) {
+        this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+        return;
+      }
+      await this.workflowExecutor.resumeWorkflow(instanceId, approvalData);
+      this.sendToClient(clientId, {
+        type: 'workflow.resumed',
+        payload: { instanceId },
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_RESUME_FAILED', error?.message ?? 'Failed to resume workflow');
+    }
+  }
+
+  private async handleWorkflowProgress(clientId: string, msg: WSMessage): Promise<void> {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const instanceId = msg.payload?.instanceId;
+      if (!instanceId) {
+        this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+        return;
+      }
+      const progress = await this.workflowExecutor.getProgress(instanceId);
+      this.sendToClient(clientId, {
+        type: 'workflow.progress',
+        payload: progress,
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_PROGRESS_FAILED', error?.message ?? 'Failed to get progress');
+    }
+  }
+
+  private async handleWorkflowCancel(clientId: string, msg: WSMessage): Promise<void> {
+    if (!this.workflowExecutor) {
+      this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+      return;
+    }
+    try {
+      const instanceId = msg.payload?.instanceId;
+      if (!instanceId) {
+        this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+        return;
+      }
+      await this.workflowExecutor.cancelWorkflow(instanceId);
+      this.sendToClient(clientId, {
+        type: 'workflow.cancelled',
+        payload: { instanceId },
+        timestamp: new Date().toISOString(),
+        sessionId: msg.sessionId ?? '',
+      });
+    } catch (error: any) {
+      this.sendError(clientId, 'WORKFLOW_CANCEL_FAILED', error?.message ?? 'Failed to cancel workflow');
+    }
+  }
+
+  // =========================================================================
   // Message Routing
   // =========================================================================
 
@@ -1009,6 +1357,11 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       console.warn(`[GatewayServer] Agent ${agentId} not connected, message queued`);
       return false;
     }
+
+    if (this.messageBus) {
+      this.messageBus.publish(`agent:${agentId}` as any, message as any);
+    }
+
     return this.sendToClient(clientId, message);
   }
 
@@ -1022,6 +1375,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
         this.sendToClient(clientId, message);
       }
     }
+
+    if (this.messageBus) {
+      this.messageBus.publish(`session:${sessionId}` as any, message as any);
+    }
   }
 
   /**
@@ -1032,6 +1389,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       if (client.type === 'dashboard' && client.ws.readyState === WebSocket.OPEN) {
         this.sendToClient(clientId, message);
       }
+    }
+
+    if (this.messageBus) {
+      this.messageBus.publish('dashboard', message as any);
     }
   }
 
@@ -1169,6 +1530,63 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
         sessionId: '',
       });
     });
+
+    // Workflow events
+    if (this.workflowExecutor) {
+      this.workflowExecutor.on('workflow:started', (instance: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.started',
+          payload: instance,
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+
+      this.workflowExecutor.on('workflow:phase-changed', (instance: any, phase: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.phase-changed',
+          payload: { instance, phase },
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+
+      this.workflowExecutor.on('workflow:step-completed', (instance: any, step: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.step-completed',
+          payload: { instance, step },
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+
+      this.workflowExecutor.on('workflow:waiting-approval', (instance: any, approval: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.waiting-approval',
+          payload: { instance, approval },
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+
+      this.workflowExecutor.on('workflow:completed', (instance: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.completed',
+          payload: instance,
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+
+      this.workflowExecutor.on('workflow:failed', (instance: any, error: any) => {
+        this.broadcastToDashboards({
+          type: 'workflow.failed',
+          payload: { instance, error },
+          timestamp: new Date().toISOString(),
+          sessionId: instance.sessionId,
+        });
+      });
+    }
   }
 
   // =========================================================================
