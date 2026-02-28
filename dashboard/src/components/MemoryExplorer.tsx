@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Brain, Database, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Agent } from "@/lib/mock-data";
-import { mockMemoryData, type AgentMemoryData } from "@/lib/mock-data";
 import { searchMemory, fetchMemoryStats } from "@/lib/api";
 import { useLocale } from "@/lib/locale-context";
 
@@ -21,45 +20,14 @@ const scopeOptions = [
   { id: "agent", en: "Agent Memory", ar: "ذاكرة الوكيل" },
 ];
 
-const mockSearchResults = [
-  {
-    id: "r1",
-    title: "Authentication Flow Architecture",
-    titleAr: "بنية تدفق المصادقة",
-    snippet: "OAuth2 + JWT implementation with refresh token rotation...",
-    snippetAr: "تنفيذ OAuth2 + JWT مع تدوير رمز التحديث...",
-    source: "Architect Agent",
-    sourceAr: "وكيل المعمار",
-    score: 0.94,
-  },
-  {
-    id: "r2",
-    title: "API Rate Limiting Strategy",
-    titleAr: "استراتيجية تحديد معدل API",
-    snippet: "Kong gateway configured with 1000 req/min per client...",
-    snippetAr: "بوابة Kong مُعدة بـ 1000 طلب/دقيقة لكل عميل...",
-    source: "Backend Agent",
-    sourceAr: "وكيل الخلفية",
-    score: 0.87,
-  },
-  {
-    id: "r3",
-    title: "OWASP Audit Findings",
-    titleAr: "نتائج تدقيق OWASP",
-    snippet: "2 medium-severity input validation issues identified...",
-    snippetAr: "تم تحديد مشكلتين متوسطتي الخطورة في التحقق من المدخلات...",
-    source: "Security Agent",
-    sourceAr: "وكيل الأمان",
-    score: 0.81,
-  },
-];
-
 export default function MemoryExplorer({ agents, locale, direction }: MemoryExplorerProps) {
   const { t } = useLocale();
   const isAr = locale === "ar";
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("team");
-  const [searchResults, setSearchResults] = useState(mockSearchResults);
+  const [searchResults, setSearchResults] = useState<{ id: string; title: string; titleAr: string; snippet: string; snippetAr: string; source: string; sourceAr: string; score: number }[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [stats, setStats] = useState<any[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,25 +38,31 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
   }, []);
 
   const performSearch = useCallback(async (q: string) => {
-    if (!q.trim()) return;
+    if (!q.trim()) {
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+    setIsSearching(true);
+    setSearchError(null);
     try {
       const data = await searchMemory(q, scope);
-      if (data.results.length > 0) {
-        setSearchResults(data.results.map((r: any) => ({
-          id: r.id,
-          title: r.content?.slice(0, 50) ?? 'Memory Entry',
-          titleAr: r.content?.slice(0, 50) ?? 'سجل ذاكرة',
-          snippet: r.content ?? '',
-          snippetAr: r.content ?? '',
-          source: r.agentId ?? 'system',
-          sourceAr: r.agentId ?? 'النظام',
-          score: r.importance ?? 0.5,
-        })));
-      }
+      setSearchResults(data.results.map((r: any) => ({
+        id: r.id,
+        title: r.content?.slice(0, 50) ?? 'Memory Entry',
+        titleAr: r.content?.slice(0, 50) ?? 'سجل ذاكرة',
+        snippet: r.content ?? '',
+        snippetAr: r.content ?? '',
+        source: r.agentId ?? 'system',
+        sourceAr: r.agentId ?? 'النظام',
+        score: r.importance ?? 0.5,
+      })));
     } catch {
-      // Fall back to mock data - already set
+      setSearchError(isAr ? 'فشل البحث في الذاكرة' : 'Memory search failed');
+    } finally {
+      setIsSearching(false);
     }
-  }, [scope]);
+  }, [scope, isAr]);
 
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value);
@@ -104,9 +78,14 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
     };
   }, []);
 
-  const memoryMap = new Map<string, AgentMemoryData>();
-  for (const m of mockMemoryData) {
-    memoryMap.set(m.agentId, m);
+  const memoryMap = new Map<string, any>();
+  for (const s of stats) {
+    memoryMap.set(s.agentId, {
+      shortTermTokens: s.shortTermTokens ?? 0,
+      shortTermLastUpdated: s.shortTermLastUpdated ?? 0,
+      longTermEntries: s.longTermEntries ?? 0,
+      longTermTokens: s.longTermTokens ?? 0,
+    });
   }
 
   return (
@@ -148,6 +127,19 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
             <h3 className="text-xs font-semibold text-text-secondary">
               {t("memory.results")}
             </h3>
+            {isSearching && (
+              <p className="text-xs text-text-muted animate-pulse">
+                {isAr ? 'جاري البحث...' : 'Searching...'}
+              </p>
+            )}
+            {searchError && (
+              <p className="text-xs text-red-400">{searchError}</p>
+            )}
+            {!isSearching && !searchError && searchResults.length === 0 && (
+              <p className="text-xs text-text-muted">
+                {isAr ? 'لا توجد نتائج' : 'No results found'}
+              </p>
+            )}
             {searchResults.map((result) => (
               <div
                 key={result.id}

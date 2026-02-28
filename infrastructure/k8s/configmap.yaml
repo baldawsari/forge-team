@@ -15,3 +15,8 @@ data:
   DEPLOYMENT_REGION: "riyadh"
   DASHBOARD_PORT: "3000"
   NEXT_PUBLIC_GATEWAY_URL: "http://gateway:18789"
+  # Data sovereignty configuration
+  DATA_SOVEREIGNTY_ENABLED: "true"
+  DATA_SOVEREIGNTY_REGION: "sa-riyadh-1"
+  ALLOWED_EGRESS_DOMAINS: "api.anthropic.com,generativelanguage.googleapis.com,api.elevenlabs.io"
+  ENFORCE_REGION_BINDING: "true"
