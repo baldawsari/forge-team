@@ -571,25 +571,25 @@ All workstreams are fully independent and can run in parallel.
 
 After all work is complete, verify:
 
-- [ ] `MemoryExplorer.tsx` no longer initializes `searchResults` with `mockSearchResults`
-- [ ] `MemoryExplorer.tsx` has loading state (`isSearching`) and error state (`searchError`)
-- [ ] `MemoryExplorer.tsx` shows "No results found" when search returns empty
-- [ ] `MemoryExplorer.tsx` agent memory grid uses real data from `fetchMemoryStats()`, not `mockMemoryData`
-- [ ] `mockMemoryData` and `mockSearchResults` imports are removed from `MemoryExplorer.tsx`
-- [ ] `select.tsx`: `pl-8` → `ps-8`, `pr-2` → `pe-2`, `left-2` → `start-2` (3 replacements)
-- [ ] `select.tsx`: `data-[side=left]` and `data-[side=right]` animation classes are NOT changed
-- [ ] `table.tsx`: `text-left` → `text-start`, `pr-0` → `pe-0` (3 replacements)
-- [ ] `tests/integration/interrupt-resume.test.ts` exists with at least 3 test cases
-- [ ] `tests/integration/budget-verification.test.ts` exists with at least 5 test cases
-- [ ] `tests/integration/data-sovereignty.test.ts` exists with at least 6 test cases
-- [ ] Budget test verifies monthly projection under $450 with typical usage
-- [ ] Sovereignty test verifies only Anthropic/Google in model catalog
-- [ ] Sovereignty test verifies DEPLOYMENT_REGION=riyadh in docker-compose and k8s configmap
-- [ ] Sovereignty test verifies no external analytics packages in dashboard
-- [ ] `network-policies.yaml` has egress deny policies for: dashboard, redis, minio
-- [ ] Dashboard egress only allows DNS + gateway:18789
-- [ ] Redis and minio egress only allows DNS
-- [ ] `configmap.yaml` has `DATA_SOVEREIGNTY_ENABLED`, `DATA_SOVEREIGNTY_REGION`, `ALLOWED_EGRESS_DOMAINS`, `ENFORCE_REGION_BINDING`
-- [ ] No `gpt-4o` or `gpt-4o-mini` references introduced
-- [ ] All new test files use Vitest (`import { describe, it, expect } from 'vitest'`)
-- [ ] Existing dashboard components still compile (no broken imports)
+- [x] `MemoryExplorer.tsx` no longer initializes `searchResults` with `mockSearchResults`
+- [x] `MemoryExplorer.tsx` has loading state (`isSearching`) and error state (`searchError`)
+- [x] `MemoryExplorer.tsx` shows "No results found" when search returns empty
+- [x] `MemoryExplorer.tsx` agent memory grid uses real data from `fetchMemoryStats()`, not `mockMemoryData`
+- [x] `mockMemoryData` and `mockSearchResults` imports are removed from `MemoryExplorer.tsx`
+- [x] `select.tsx`: `pl-8` → `ps-8`, `pr-2` → `pe-2`, `left-2` → `start-2` (3 replacements)
+- [x] `select.tsx`: `data-[side=left]` and `data-[side=right]` animation classes are NOT changed
+- [x] `table.tsx`: `text-left` → `text-start`, `pr-0` → `pe-0` (3 replacements)
+- [x] `tests/integration/interrupt-resume.test.ts` exists with at least 3 test cases
+- [x] `tests/integration/budget-verification.test.ts` exists with at least 5 test cases
+- [x] `tests/integration/data-sovereignty.test.ts` exists with at least 6 test cases
+- [x] Budget test verifies monthly projection under $450 with typical usage
+- [x] Sovereignty test verifies only Anthropic/Google in model catalog
+- [x] Sovereignty test verifies DEPLOYMENT_REGION=riyadh in docker-compose and k8s configmap
+- [x] Sovereignty test verifies no external analytics packages in dashboard
+- [x] `network-policies.yaml` has egress deny policies for: dashboard, redis, minio
+- [x] Dashboard egress only allows DNS + gateway:18789
+- [x] Redis and minio egress only allows DNS
+- [x] `configmap.yaml` has `DATA_SOVEREIGNTY_ENABLED`, `DATA_SOVEREIGNTY_REGION`, `ALLOWED_EGRESS_DOMAINS`, `ENFORCE_REGION_BINDING`
+- [x] No `gpt-4o` or `gpt-4o-mini` references introduced
+- [x] All new test files use Vitest (`import { describe, it, expect } from 'vitest'`)
+- [x] Existing dashboard components still compile (no broken imports)
