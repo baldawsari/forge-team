@@ -505,22 +505,22 @@ voice_transcript: (data: {
 
 After all changes, verify:
 
-- [ ] `npm run build` in `/forge-team/dashboard/` succeeds with zero errors
-- [ ] shadcn/ui components installed and `components/ui/` directory exists with button, card, dialog, table, select, input, badge, tabs, toast, tooltip
-- [ ] `@tanstack/react-table` is in `package.json` dependencies
-- [ ] ModelsCostPanel uses TanStack Table with sorting on Tokens Used and Cost columns
-- [ ] ModelsCostPanel has "Daily Cap ($)" column with per-agent editable inputs
-- [ ] ModelsCostPanel has "Save Changes" button that POSTs to `/api/models/assignments`
-- [ ] `next-intl` is NOT in `package.json` (removed)
-- [ ] No `isAr ? "..." : "..."` patterns remain in `Sidebar.tsx`, `page.tsx` Settings view, `MemoryExplorer.tsx`, or `VoiceTranscriptViewer.tsx` (except intentional cases like the language toggle label)
-- [ ] `Sidebar.tsx` uses NO physical CSS classes (`right-0`, `left-0`, `border-l`, `border-r`) — only logical equivalents
-- [ ] All physical Tailwind direction classes across dashboard/src/ are replaced with logical equivalents
-- [ ] Both `ar.json` and `en.json` have identical key structures — no key in one is missing from the other
-- [ ] The glass-card dark aesthetic is preserved
-- [ ] Dark/light mode toggle still works
-- [ ] RTL Arabic layout still works correctly
-- [ ] MemoryExplorer attempts real API call (falls back to mock data)
-- [ ] VoiceTranscriptViewer subscribes to WebSocket (falls back to mock data)
+- [x] `npm run build` in `/forge-team/dashboard/` succeeds with zero errors
+- [x] shadcn/ui components installed and `components/ui/` directory exists with button, card, dialog, table, select, input, badge, tabs, toast (sonner), tooltip
+- [x] `@tanstack/react-table` is in `package.json` dependencies
+- [x] ModelsCostPanel uses TanStack Table with sorting on Tokens Used and Cost columns
+- [x] ModelsCostPanel has "Daily Cap ($)" column with per-agent editable inputs
+- [x] ModelsCostPanel has "Save Changes" button that POSTs to `/api/models/assignments`
+- [x] `next-intl` is NOT in `package.json` (removed)
+- [x] No `isAr ? "..." : "..."` patterns remain in `Sidebar.tsx`, `page.tsx` Settings view, `MemoryExplorer.tsx`, or `VoiceTranscriptViewer.tsx` (except intentional cases like the language toggle label)
+- [x] `Sidebar.tsx` uses NO physical CSS classes (`right-0`, `left-0`, `border-l`, `border-r`) — only logical equivalents
+- [x] All physical Tailwind direction classes across dashboard/src/ are replaced with logical equivalents
+- [x] Both `ar.json` and `en.json` have identical key structures — no key in one is missing from the other (200 keys each)
+- [x] The glass-card dark aesthetic is preserved
+- [x] Dark/light mode toggle still works
+- [x] RTL Arabic layout still works correctly
+- [x] MemoryExplorer attempts real API call (falls back to mock data)
+- [x] VoiceTranscriptViewer subscribes to WebSocket (falls back to mock data)
 
 ---
 
