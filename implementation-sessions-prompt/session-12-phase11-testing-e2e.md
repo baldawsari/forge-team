@@ -1624,28 +1624,31 @@ Create a team with these agents working in parallel:
 
 After all work is complete, verify:
 
-- [ ] `vitest` and `@vitest/coverage-v8` are in root devDependencies
-- [ ] `vitest` is in gateway, viadp, and memory workspace devDependencies
-- [ ] `@playwright/test` is in dashboard devDependencies
-- [ ] `/forge-team/vitest.config.ts` exists at root
-- [ ] Per-workspace `vitest.config.ts` exists in gateway, viadp, memory
-- [ ] `/forge-team/tests/playwright.config.ts` exists
-- [ ] Root `package.json` has scripts: `test`, `test:unit`, `test:e2e`, `test:load`, `test:coverage`
-- [ ] Each workspace `package.json` has `test` and `test:watch` scripts
-- [ ] `/forge-team/gateway/src/__tests__/model-router.test.ts` exists with all test cases
-- [ ] `/forge-team/gateway/src/__tests__/session-manager.test.ts` exists with all test cases
-- [ ] `/forge-team/gateway/src/__tests__/task-manager.test.ts` exists with all test cases
-- [ ] `/forge-team/viadp/src/__tests__/delegation-engine.test.ts` exists with all test cases
-- [ ] `/forge-team/viadp/src/__tests__/trust-manager.test.ts` exists with all test cases
-- [ ] `/forge-team/viadp/src/__tests__/audit-log.test.ts` exists with all test cases
-- [ ] `/forge-team/memory/src/__tests__/memory-manager.test.ts` exists with all test cases
-- [ ] `/forge-team/memory/src/__tests__/summarizer.test.ts` exists with all test cases
-- [ ] `/forge-team/tests/e2e/riyadh-attendance.test.ts` exists with full 5-day sprint scenario
-- [ ] `/forge-team/tests/e2e/dashboard.spec.ts` exists with Playwright tests
-- [ ] `/forge-team/tests/stress/memory-load.test.ts` exists with 10k entry test
-- [ ] `/forge-team/tests/load/agent-scalability.test.ts` exists with 100-agent test
-- [ ] `/forge-team/tests/integration/model-assignments.test.ts` verifies all 12 agents with correct models
-- [ ] All tests use mocked LLM responses — zero real API calls
-- [ ] All model assignment tests match the canonical table from `model-router.ts` lines 110-171
-- [ ] No existing source code was modified except `package.json` files (for dependencies and scripts)
-- [ ] `npx vitest run` from root completes without TypeScript import errors (tests may fail if source has bugs — that is expected)
+- [x] `vitest` and `@vitest/coverage-v8` are in root devDependencies
+- [x] `vitest` is in gateway, viadp, and memory workspace devDependencies
+- [x] `@playwright/test` is in dashboard devDependencies
+- [x] `/forge-team/vitest.config.ts` exists at root
+- [x] Per-workspace `vitest.config.ts` exists in gateway, viadp, memory
+- [x] `/forge-team/tests/playwright.config.ts` exists
+- [x] Root `package.json` has scripts: `test`, `test:unit`, `test:e2e`, `test:load`, `test:coverage`
+- [x] Each workspace `package.json` has `test` and `test:watch` scripts
+- [x] `/forge-team/gateway/src/__tests__/model-router.test.ts` exists with all test cases
+- [x] `/forge-team/gateway/src/__tests__/session-manager.test.ts` exists with all test cases
+- [x] `/forge-team/gateway/src/__tests__/task-manager.test.ts` exists with all test cases
+- [x] `/forge-team/viadp/src/__tests__/delegation-engine.test.ts` exists with all test cases
+- [x] `/forge-team/viadp/src/__tests__/trust-manager.test.ts` exists with all test cases
+- [x] `/forge-team/viadp/src/__tests__/audit-log.test.ts` exists with all test cases
+- [x] `/forge-team/memory/src/__tests__/memory-manager.test.ts` exists with all test cases
+- [x] `/forge-team/memory/src/__tests__/summarizer.test.ts` exists with all test cases
+- [x] `/forge-team/tests/e2e/riyadh-attendance.test.ts` exists with full 5-day sprint scenario
+- [x] `/forge-team/tests/e2e/dashboard.spec.ts` exists with Playwright tests
+- [x] `/forge-team/tests/stress/memory-load.test.ts` exists with 10k entry test
+- [x] `/forge-team/tests/load/agent-scalability.test.ts` exists with 100-agent test
+- [x] `/forge-team/tests/integration/model-assignments.test.ts` verifies all 12 agents with correct models
+- [x] All tests use mocked LLM responses — zero real API calls
+- [x] All model assignment tests match the canonical table from `model-router.ts` lines 110-171
+- [x] No existing source code was modified except `package.json` files (for dependencies and scripts)
+- [x] `npx vitest run` from root completes without TypeScript import errors (tests may fail if source has bugs — that is expected)
+
+### TODO LATER: Playwright E2E Dashboard Tests
+- [ ] Playwright dashboard E2E tests (`tests/e2e/dashboard.spec.ts`) require a full-stack environment (gateway + dashboard running together). Need to set up a mock gateway WebSocket server or run against the real gateway to execute these tests. Currently tests are written and ready but need infrastructure to pass.
