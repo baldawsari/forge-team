@@ -442,22 +442,22 @@ All workstreams are fully independent and can run in parallel. WORKSTREAM 3 is t
 
 After all work is complete, verify:
 
-- [ ] `execution-monitor.ts` is fully rewritten (NOT the 43-line stub anymore)
-- [ ] `MetricSample` and `AnomalyResult` interfaces exist
-- [ ] `detectAnomaly()` computes Z-score from a sliding window of samples
-- [ ] Adaptive threshold adjusts between 2.0-3.0 based on recent anomaly rate
-- [ ] `checkAgentHealth()` returns a real composite score (not hardcoded `0.95`)
-- [ ] `recordMetric()` is exported and called from `DelegationEngine.delegate()`
-- [ ] `startMonitoring()` records `progress_rate` metrics and runs anomaly detection
-- [ ] `RFQ`, `RFQBid`, `RFQResult` types exist in `delegation-engine.ts`
-- [ ] `createRFQ()` creates an open RFQ
-- [ ] `submitBid()` validates agent availability and cost limits
-- [ ] `evaluateRFQ()` scores bids using capability + cost + trust + time factors
-- [ ] `delegateWithRFQ()` combines the full lifecycle: create → bid → evaluate → delegate
-- [ ] All new types and functions are exported from `viadp/src/index.ts`
-- [ ] `init.sql` has `audit_log_no_update` and `audit_log_no_delete` rules
-- [ ] `init.sql` has a COMMENT on `audit_log` table documenting immutability
-- [ ] `audit-middleware.ts` `logMessage()` has retry logic (2 retries, 1s delay)
-- [ ] Failed persistence after all retries logs `console.error` (not `console.warn`)
-- [ ] No `gpt-4o` or `gpt-4o-mini` references introduced
-- [ ] Existing VIADP tests in `viadp/src/__tests__/` still pass (no breaking changes to existing APIs)
+- [x] `execution-monitor.ts` is fully rewritten (NOT the 43-line stub anymore)
+- [x] `MetricSample` and `AnomalyResult` interfaces exist
+- [x] `detectAnomaly()` computes Z-score from a sliding window of samples
+- [x] Adaptive threshold adjusts between 2.0-3.0 based on recent anomaly rate
+- [x] `checkAgentHealth()` returns a real composite score (not hardcoded `0.95`)
+- [x] `recordMetric()` is exported and called from `DelegationEngine.delegate()`
+- [x] `startMonitoring()` records `progress_rate` metrics and runs anomaly detection
+- [x] `RFQ`, `RFQBid`, `RFQResult` types exist in `delegation-engine.ts`
+- [x] `createRFQ()` creates an open RFQ
+- [x] `submitBid()` validates agent availability and cost limits
+- [x] `evaluateRFQ()` scores bids using capability + cost + trust + time factors
+- [x] `delegateWithRFQ()` combines the full lifecycle: create → bid → evaluate → delegate
+- [x] All new types and functions are exported from `viadp/src/index.ts`
+- [x] `init.sql` has `audit_log_no_update` and `audit_log_no_delete` rules
+- [x] `init.sql` has a COMMENT on `audit_log` table documenting immutability
+- [x] `audit-middleware.ts` `logMessage()` has retry logic (2 retries, 1s delay)
+- [x] Failed persistence after all retries logs `console.error` (not `console.warn`)
+- [x] No `gpt-4o` or `gpt-4o-mini` references introduced
+- [x] Existing VIADP tests in `viadp/src/__tests__/` still pass (no breaking changes to existing APIs)
