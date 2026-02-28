@@ -309,19 +309,19 @@ All workstreams are fully independent and can run in parallel.
 
 After all work is complete, verify:
 
-- [ ] `ModelRouter.route()` returns downgraded model at 100% daily cap
-- [ ] `ModelRouter.route()` returns `reason: 'hard-cap-blocked'` at 120% daily cap
-- [ ] `CostCapStatus` has a `severity` field with 4 levels
-- [ ] `getDowngradeModel()` exists and maps every model to its cheaper alternative
-- [ ] `cost:alert` listener in `index.ts` auto-pauses agents at 120%, throttles at 100%, warns at threshold
-- [ ] Socket.IO emits `cost_update` events for each severity level
-- [ ] Task completion (`status === 'done'`) triggers `summarizer.checkAndCompact()`
-- [ ] `MemoryManager` has `normalizeScope()` that maps `global→company`, `session→thread`, etc.
-- [ ] `VectorStore` logs a visible warning on first hash embedding fallback
-- [ ] `VectorStore` warning is logged only once (not per-call)
-- [ ] `.github/workflows/ci.yml` exists with Node 22, postgres service, redis service
-- [ ] CI runs `npm ci`, typecheck, and `npm test`
-- [ ] Root `package.json` has `test` and `typecheck` scripts (or CI uses workspace-specific commands)
-- [ ] 3 new test cases added to `model-router.test.ts` (downgrade, hard block, severity levels)
-- [ ] No `gpt-4o` or `gpt-4o-mini` references introduced
-- [ ] No new files created beyond `.github/workflows/ci.yml`
+- [x] `ModelRouter.route()` returns downgraded model at 100% daily cap
+- [x] `ModelRouter.route()` returns `reason: 'hard-cap-blocked'` at 120% daily cap
+- [x] `CostCapStatus` has a `severity` field with 4 levels
+- [x] `getDowngradeModel()` exists and maps every model to its cheaper alternative
+- [x] `cost:alert` listener in `index.ts` auto-pauses agents at 120%, throttles at 100%, warns at threshold
+- [x] Socket.IO emits `cost_update` events for each severity level
+- [x] Task completion (`status === 'done'`) triggers `summarizer.checkAndCompact()`
+- [x] `MemoryManager` has `normalizeScope()` that maps `global→company`, `session→thread`, etc.
+- [x] `VectorStore` logs a visible warning on first hash embedding fallback
+- [x] `VectorStore` warning is logged only once (not per-call)
+- [x] `.github/workflows/ci.yml` exists with Node 22, postgres service, redis service
+- [x] CI runs `npm ci`, typecheck, and `npm test`
+- [x] Root `package.json` has `test` and `typecheck` scripts (or CI uses workspace-specific commands)
+- [x] 3 new test cases added to `model-router.test.ts` (downgrade, hard block, severity levels)
+- [x] No `gpt-4o` or `gpt-4o-mini` references introduced
+- [x] No new files created beyond `.github/workflows/ci.yml`
