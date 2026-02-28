@@ -59,3 +59,34 @@ export {
   type AuditFilter,
   type IntegrityReport,
 } from './audit-log';
+
+export {
+  runDynamicAssessment,
+  registerAgentsForAssessment,
+  type AssessmentDelegationRequest,
+  type Bid,
+} from './assessment';
+
+export {
+  startMonitoring,
+  stopMonitoring,
+  checkAgentHealth,
+  type MonitoringContext,
+} from './execution-monitor';
+
+export {
+  issueDelegationToken,
+  updateTrustBayesian,
+  getHeatPenalty,
+  getReputation,
+  type TrustCalibrationDelegationRequest,
+  type TrustCalibrationBid,
+  type TrustCalibrationDelegationToken,
+} from './trust-calibration';
+
+export { generateZKProof } from './verification';
+
+export {
+  applyEconomicSelfRegulation,
+  enforceParallelBidsForCritical,
+} from './resilience';

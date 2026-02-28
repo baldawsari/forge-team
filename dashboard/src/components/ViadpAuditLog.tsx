@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Shield,
   CheckCircle2,
@@ -11,6 +11,8 @@ import {
   Filter,
 } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
+import { useSocket } from "@/lib/socket";
+import type { ViadpUpdateEvent } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 import type { DelegationEntry, Agent } from "@/lib/mock-data";
 
@@ -46,12 +48,47 @@ function getTrustScoreColor(score: number): string {
   return "#dc3545";
 }
 
-export default function ViadpAuditLog({ delegations, agents }: ViadpAuditLogProps) {
+export default function ViadpAuditLog({ delegations: initialDelegations, agents }: ViadpAuditLogProps) {
   const { locale, t } = useLocale();
   const isAr = locale === "ar";
+  const [delegations, setDelegations] = useState<DelegationEntry[]>(initialDelegations);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const { isConnected, on } = useSocket();
+
+  useEffect(() => {
+    const unsub = on('viadp_update', (event: ViadpUpdateEvent) => {
+      if (event.type === 'delegation_requested' || event.type === 'delegation_accepted' ||
+          event.type === 'delegation_completed' || event.type === 'delegation_failed') {
+        const entry = event.data as DelegationEntry;
+        if (entry && entry.id) {
+          setDelegations(prev => [entry, ...prev]);
+        }
+      }
+    });
+    return unsub;
+  }, [on]);
+
+  useEffect(() => {
+    if (isConnected) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:18789/api/viadp/delegations');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setDelegations(data);
+          }
+        }
+      } catch {
+        // Gateway offline - keep using current data
+      }
+    }, 10000);
+
+    return () => clearInterval(pollInterval);
+  }, [isConnected]);
 
   const filteredDelegations = delegations.filter((d) => {
     const matchesAgent =

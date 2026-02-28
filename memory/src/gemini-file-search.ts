@@ -115,7 +115,7 @@ export class GeminiFileSearch {
       });
 
       const store: FileStore = {
-        id: response?.name ?? storeId,
+        id: (response?.name as string) ?? storeId,
         name,
         projectId,
         documentCount: 0,
@@ -243,8 +243,8 @@ export class GeminiFileSearch {
         ],
       });
 
-      if (response?.candidates?.[0]) {
-        const candidate = response.candidates[0];
+      if ((response?.candidates as any)?.[0]) {
+        const candidate = (response.candidates as any[])[0];
         const groundingMetadata = candidate.groundingMetadata;
         const textContent =
           candidate.content?.parts?.[0]?.text ?? '';

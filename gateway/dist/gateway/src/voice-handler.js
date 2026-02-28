@@ -19,7 +19,7 @@ const uuid_1 = require("uuid");
 // ---------------------------------------------------------------------------
 const DEFAULT_CONFIG = {
     whisperEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
-    whisperApiKey: process.env.OPENAI_API_KEY ?? '',
+    whisperApiKey: process.env.WHISPER_API_KEY ?? process.env.OPENAI_API_KEY ?? '',
     whisperModel: 'whisper-1',
     elevenLabsEndpoint: 'https://api.elevenlabs.io/v1/text-to-speech',
     elevenLabsApiKey: process.env.ELEVENLABS_API_KEY ?? '',
@@ -123,6 +123,7 @@ class VoiceHandler extends eventemitter3_1.EventEmitter {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown STT error';
+            console.error(`[VoiceHandler] STT error:`, message);
             this.emit('voice:stt-error', id, message);
             // Return a failed result rather than throwing
             return {
@@ -158,9 +159,7 @@ class VoiceHandler extends eventemitter3_1.EventEmitter {
             const url = `${this.config.elevenLabsEndpoint}/${voiceId}`;
             const body = {
                 text: request.text,
-                model_id: request.language.startsWith('ar')
-                    ? 'eleven_multilingual_v2' // Use multilingual model for Arabic
-                    : 'eleven_monolingual_v1',
+                model_id: 'eleven_multilingual_v2',
                 voice_settings: {
                     stability: request.stability ?? 0.5,
                     similarity_boost: request.similarityBoost ?? 0.75,
@@ -198,6 +197,7 @@ class VoiceHandler extends eventemitter3_1.EventEmitter {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown TTS error';
+            console.error(`[VoiceHandler] TTS error:`, message);
             this.emit('voice:tts-error', id, message);
             // Return an empty result rather than throwing
             return {

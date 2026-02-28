@@ -805,21 +805,21 @@ if (this.vectorStore) {
 
 After all fixes, verify:
 
-- [ ] `npx tsc --noEmit` passes in `shared/`, `memory/`, and `gateway/` packages
-- [ ] `MemoryScope` in `shared/types/memory.ts` uses `company|team|project|agent|thread` (no `global|session|phase|task`)
-- [ ] `HierarchicalScope` type is removed from `memory-manager.ts` (imported from shared instead)
-- [ ] `VectorStore.embed()` calls Google `text-embedding-004` when API key is available
-- [ ] `VectorStore.embed()` falls back to hash-based embedding when no API key is set
-- [ ] `AgentRunner.processUserMessage()` calls `retrieveContext()` before the LLM call
-- [ ] `AgentRunner.processUserMessage()` stores user+agent messages in memory after the LLM call
-- [ ] `Summarizer.checkAndCompact()` persists the summary via `memoryManager.compact()`
-- [ ] Task-completed events trigger summarization in gateway index.ts
-- [ ] Company KB is auto-provisioned on gateway startup
-- [ ] Each agent config.json has a `fileSearchStoreId` field (initially null)
-- [ ] Failover from Gemini File Search to pgvector works in `retrieveContext()`
-- [ ] Gateway has REST endpoints: GET `/api/memory/search`, GET `/api/memory/stats`, POST `/api/memory/store`
-- [ ] MemoryExplorer.tsx calls real API endpoints with mock fallback
-- [ ] No string `gpt-4o` or `gpt-4o-mini` appears anywhere in the modified files
+- [x] `npx tsc --noEmit` passes in `shared/`, `memory/`, and `gateway/` packages
+- [x] `MemoryScope` in `shared/types/memory.ts` uses `company|team|project|agent|thread` (no `global|session|phase|task`)
+- [x] `HierarchicalScope` type is removed from `memory-manager.ts` (imported from shared instead)
+- [x] `VectorStore.embed()` calls Google `text-embedding-004` when API key is available
+- [x] `VectorStore.embed()` falls back to hash-based embedding when no API key is set
+- [x] `AgentRunner.processUserMessage()` calls `retrieveContext()` before the LLM call
+- [x] `AgentRunner.processUserMessage()` stores user+agent messages in memory after the LLM call
+- [x] `Summarizer.checkAndCompact()` persists the summary via `memoryManager.compact()`
+- [x] Task-completed events trigger summarization in gateway index.ts
+- [x] Company KB is auto-provisioned on gateway startup
+- [x] Each agent config.json has a `fileSearchStoreId` field (initially null)
+- [x] Failover from Gemini File Search to pgvector works in `retrieveContext()`
+- [x] Gateway has REST endpoints: GET `/api/memory/search`, GET `/api/memory/stats`, POST `/api/memory/store`
+- [x] MemoryExplorer.tsx calls real API endpoints with mock fallback
+- [x] No string `gpt-4o` or `gpt-4o-mini` appears anywhere in the modified files
 
 ---
 

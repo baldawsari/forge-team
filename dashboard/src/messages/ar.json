@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "فورج تيم",
-    "subtitle": "منصة فريق وكلاء دورة حياة التطوير الذاتية"
+    "subtitle": "إصدار BMAD-Claw"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -46,7 +46,10 @@
     "viewInConversation": "عرض في المحادثة",
     "clearDemoData": "مسح البيانات التجريبية",
     "demoDataBanner": "بيانات تجريبية — أنشئ مهمة للبدء",
-    "demoBadge": "تجريبي"
+    "demoBadge": "تجريبي",
+    "createTask": "إنشاء مهمة جديدة",
+    "create": "إنشاء",
+    "revisionFeedback": "ملاحظات المراجعة"
   },
   "agents": {
     "title": "حالة الوكلاء",
@@ -106,7 +109,12 @@
     "fallback2Model": "البديل ٢",
     "optimizeSuggestion": "اقتراح: تبديل مطور الواجهة من gemini-3.1-pro إلى gemini-flash-3 للمهام الروتينية — توفير تقديري ٣٠٪",
     "budgetLimit": "حد الميزانية",
-    "total": "الإجمالي"
+    "total": "الإجمالي",
+    "save": "حفظ التغييرات",
+    "saved": "تم حفظ التغييرات بنجاح",
+    "saveFailed": "فشل حفظ التغييرات",
+    "dailyCap": "الحد اليومي ($)",
+    "searchAgent": "البحث عن وكيل..."
   },
   "viadp": {
     "title": "تدقيق تفويض VIADP",
@@ -142,7 +150,8 @@
     "connected": "متصل",
     "offline": "غير متصل",
     "connectingGateway": "جارٍ الاتصال بالبوابة...",
-    "total": "الإجمالي"
+    "total": "الإجمالي",
+    "create": "إنشاء"
   },
   "conversation": {
     "title": "المحادثة",
@@ -181,7 +190,10 @@
     "minutesAgo": "دقيقة",
     "tokensUsed": "رمز مستخدم",
     "search": "البحث في الذاكرة...",
-    "scope": "النطاق"
+    "scope": "النطاق",
+    "tokens": "رمز",
+    "results": "النتائج",
+    "relevance": "الصلة"
   },
   "settings": {
     "gatewayUrl": "عنوان البوابة",
@@ -192,10 +204,22 @@
     "save": "حفظ الإعدادات"
   },
   "voice": {
+    "title": "نصوص الصوت",
     "transcripts": "نصوص الصوت",
     "notConfigured": "الصوت غير مفعل",
     "recording": "جارٍ التسجيل...",
-    "transcribing": "جارٍ التحويل..."
+    "transcribing": "جارٍ التحويل...",
+    "allSessions": "جميع الجلسات",
+    "session": "الجلسة",
+    "language": "اللغة",
+    "all": "الكل",
+    "arabic": "العربية",
+    "english": "الإنجليزية",
+    "confidence": "الثقة",
+    "duration": "المدة",
+    "noTranscripts": "لا توجد نصوص",
+    "sttLabel": "المستخدم \u2192 النظام",
+    "ttsLabel": "النظام \u2192 المستخدم"
   },
   "partyMode": {
     "title": "وضع الحفلة",

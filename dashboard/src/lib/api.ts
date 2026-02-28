@@ -212,6 +212,18 @@ export async function fetchModelAssignments(): Promise<{
   return fetchAPI<{ assignments: Record<string, ModelAssignment> }>('/api/models/assignments');
 }
 
+export async function saveModelAssignments(
+  assignments: Record<string, {
+    primary: string;
+    fallback: string;
+    fallback2: string;
+    temperature: number;
+    dailyCap: number;
+  }>
+): Promise<void> {
+  await postAPI('/api/models/assignments', { assignments });
+}
+
 export async function fetchModelCosts(agentId?: string): Promise<CostsResponse> {
   const query = agentId ? `?agentId=${agentId}` : '';
   return fetchAPI<CostsResponse>(`/api/models/costs${query}`);
@@ -307,4 +319,33 @@ export async function rejectTask(taskId: string, feedback: string): Promise<any>
 
 export async function assignTaskToAgent(taskId: string, agentId: string): Promise<any> {
   return postAPI(`/api/tasks/${taskId}/assign`, { agentId });
+}
+
+// -- Memory API --
+
+export async function searchMemory(
+  query: string,
+  scope?: string,
+  agentId?: string,
+  limit?: number,
+): Promise<{ results: any[]; total: number }> {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (scope) params.set('scope', scope);
+  if (agentId) params.set('agentId', agentId);
+  if (limit) params.set('limit', String(limit));
+
+  return fetchAPI<{ results: any[]; total: number }>(`/api/memory/search?${params}`);
+}
+
+export async function fetchMemoryStats(): Promise<{ stats: any[] }> {
+  return fetchAPI<{ stats: any[] }>('/api/memory/stats');
+}
+
+export async function storeMemory(
+  scope: string,
+  content: string,
+  options?: Record<string, any>,
+): Promise<{ entry: any }> {
+  return postAPI<{ entry: any }>('/api/memory/store', { scope, content, ...options });
 }

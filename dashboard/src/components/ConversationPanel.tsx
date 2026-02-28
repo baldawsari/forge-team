@@ -27,6 +27,8 @@ import {
   synthesizeText,
 } from "@/lib/api";
 import type { Agent } from "@/lib/mock-data";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -975,37 +977,45 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
             {/* Input row */}
             <div className="flex items-center gap-2">
               {/* Mic button - always shown, disabled when STT not configured */}
-              <button
-                onClick={voiceEnabled.stt ? (isRecording ? stopRecording : startRecording) : undefined}
-                disabled={isTranscribing || !voiceEnabled.stt}
-                className={cn(
-                  "p-2.5 rounded-xl transition-colors shrink-0",
-                  !voiceEnabled.stt
-                    ? "text-text-muted/20 cursor-not-allowed"
-                    : isRecording
-                      ? "bg-danger/20 text-danger animate-pulse"
-                      : isTranscribing
-                        ? "text-text-muted/30"
-                        : "text-text-muted hover:text-primary-light"
-                )}
-                title={
-                  !voiceEnabled.stt
-                    ? t("conversation.voiceNotConfiguredTooltip")
-                    : isRecording
-                      ? t("conversation.micRecording")
-                      : isTranscribing
-                        ? t("conversation.micTranscribing")
-                        : t("conversation.mic")
-                }
-              >
-                {isTranscribing ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : isRecording ? (
-                  <MicOff size={18} />
-                ) : (
-                  <Mic size={18} />
-                )}
-              </button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={voiceEnabled.stt ? (isRecording ? stopRecording : startRecording) : undefined}
+                      disabled={isTranscribing || !voiceEnabled.stt}
+                      className={cn(
+                        "p-2.5 rounded-xl transition-colors shrink-0",
+                        !voiceEnabled.stt
+                          ? "text-text-muted/20 cursor-not-allowed"
+                          : isRecording
+                            ? "bg-danger/20 text-danger animate-pulse"
+                            : isTranscribing
+                              ? "text-text-muted/30"
+                              : "text-text-muted hover:text-primary-light"
+                      )}
+                    >
+                      {isTranscribing ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : isRecording ? (
+                        <MicOff size={18} />
+                      ) : (
+                        <Mic size={18} />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>
+                      {!voiceEnabled.stt
+                        ? t("conversation.voiceNotConfiguredTooltip")
+                        : isRecording
+                          ? t("conversation.micRecording")
+                          : isTranscribing
+                            ? t("conversation.micTranscribing")
+                            : t("conversation.mic")}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
 
               {/* Text input */}
               <input
@@ -1032,19 +1042,19 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
               />
 
               {/* Send button */}
-              <button
+              <Button
                 onClick={handleSendMain}
                 disabled={!inputText.trim()}
+                size="icon"
                 className={cn(
-                  "p-2.5 rounded-xl transition-all shrink-0",
+                  "rounded-xl shrink-0",
                   inputText.trim()
                     ? "bg-primary text-white shadow-[0_0_12px_rgba(0,100,0,0.3)] hover:bg-primary-light"
-                    : "text-text-muted/30 cursor-not-allowed"
+                    : "text-text-muted/30 bg-transparent cursor-not-allowed"
                 )}
-                title={t("conversation.send")}
               >
                 <Send size={18} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1172,18 +1182,19 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                   )}
                   dir="auto"
                 />
-                <button
+                <Button
                   onClick={handleSendDm}
                   disabled={!dmInputText.trim()}
+                  size="icon"
                   className={cn(
-                    "p-2 rounded-lg transition-all shrink-0",
+                    "rounded-lg shrink-0 h-8 w-8",
                     dmInputText.trim()
                       ? "bg-primary text-white hover:bg-primary-light"
-                      : "text-text-muted/30 cursor-not-allowed"
+                      : "text-text-muted/30 bg-transparent cursor-not-allowed"
                   )}
                 >
                   <Send size={14} />
-                </button>
+                </Button>
               </div>
             </div>
           </div>

@@ -24,6 +24,8 @@ import type { MessageBus } from './openclaw/message-bus';
 import type { OpenClawAgentRegistry } from './openclaw/agent-registry';
 import type { ToolRunner } from './openclaw/tool-runner';
 import type { WorkflowExecutor } from './workflow-engine';
+import type { ToolRegistry } from './tools/tool-registry';
+import type { SandboxManager } from './tools/sandbox-manager';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,6 +93,8 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
   private agentRegistry: OpenClawAgentRegistry | null;
   private toolRunner: ToolRunner | null;
   private workflowExecutor: WorkflowExecutor | null;
+  private sdkToolRegistry: ToolRegistry | null;
+  private sdkSandboxManager: SandboxManager | null;
 
   constructor(deps: {
     sessionManager: SessionManager;
@@ -103,6 +107,8 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     agentRegistry?: OpenClawAgentRegistry;
     toolRunner?: ToolRunner;
     workflowExecutor?: WorkflowExecutor;
+    toolRegistry?: ToolRegistry;
+    sandboxManager?: SandboxManager;
   }) {
     super();
     this.sessionManager = deps.sessionManager;
@@ -115,6 +121,8 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     this.agentRegistry = deps.agentRegistry ?? null;
     this.toolRunner = deps.toolRunner ?? null;
     this.workflowExecutor = deps.workflowExecutor ?? null;
+    this.sdkToolRegistry = deps.toolRegistry ?? null;
+    this.sdkSandboxManager = deps.sandboxManager ?? null;
   }
 
   /**
@@ -483,6 +491,86 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
         } else {
           this.sendError(clientId, 'TOOL_NAME_REQUIRED', 'Tool name is required');
         }
+        break;
+      }
+
+      // -- SDK Tool execution --
+      case 'tool.list': {
+        const client2 = this.clients.get(clientId);
+        const reqAgentId = client2?.agentId ?? (parsed.payload?.agentId as AgentId);
+        const tools = reqAgentId && this.sdkToolRegistry
+          ? this.sdkToolRegistry.listForAgent(reqAgentId).map(t => ({
+              name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist,
+            }))
+          : (this.sdkToolRegistry?.listAll() ?? []).map(t => ({
+              name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist,
+            }));
+        this.sendToClient(clientId, {
+          type: 'tool.list',
+          payload: { tools },
+          timestamp: new Date().toISOString(),
+          sessionId: parsed.sessionId ?? '',
+        });
+        break;
+      }
+      case 'tool.execute': {
+        const execClient = this.clients.get(clientId);
+        const execAgentId = execClient?.agentId ?? (parsed.payload?.agentId as AgentId);
+
+        if (!execAgentId) {
+          this.sendError(clientId, 'AGENT_ID_REQUIRED', 'Agent ID is required for tool execution');
+          break;
+        }
+
+        const toolName = parsed.payload?.name as string;
+        if (!toolName || !this.sdkToolRegistry) {
+          this.sendError(clientId, 'TOOL_NAME_REQUIRED', 'Tool name is required');
+          break;
+        }
+
+        const toolDef = this.sdkToolRegistry.get(toolName);
+        if (!toolDef) {
+          this.sendError(clientId, 'TOOL_NOT_FOUND', `Tool "${toolName}" not found`);
+          break;
+        }
+
+        if (!toolDef.agentWhitelist.includes(execAgentId)) {
+          this.sendError(clientId, 'TOOL_NOT_ALLOWED', `Agent "${execAgentId}" is not whitelisted for tool "${toolName}"`);
+          break;
+        }
+
+        const toolInput = (parsed.payload?.input ?? {}) as Record<string, unknown>;
+        const execContext = {
+          agentId: execAgentId,
+          sessionId: parsed.sessionId ?? '',
+          taskId: (parsed.payload?.taskId as string) ?? null,
+          workingDir: '/workspace',
+          timeout: 300,
+        };
+
+        toolDef.execute(toolInput, execContext)
+          .then((result) => {
+            this.sendToClient(clientId, {
+              type: 'tool.result',
+              payload: { name: toolName, result },
+              timestamp: new Date().toISOString(),
+              sessionId: parsed.sessionId ?? '',
+            });
+            this.broadcastToDashboards({
+              type: 'tool.executed',
+              payload: { agentId: execAgentId, tool: toolName, success: result.success, duration: result.duration },
+              timestamp: new Date().toISOString(),
+              sessionId: parsed.sessionId ?? '',
+            });
+          })
+          .catch((error: any) => {
+            this.sendToClient(clientId, {
+              type: 'tool.error',
+              payload: { name: toolName, error: error?.message ?? 'Tool execution failed' },
+              timestamp: new Date().toISOString(),
+              sessionId: parsed.sessionId ?? '',
+            });
+          });
         break;
       }
 
@@ -949,7 +1037,6 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
         allowedArtifactTypes: ['*'],
       },
       escalation: msg.payload?.escalation,
-      checkpoints: msg.payload?.checkpoints,
     });
 
     this.sendToClient(clientId, {

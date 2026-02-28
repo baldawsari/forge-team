@@ -44,6 +44,7 @@ import type { ModelRouter } from './model-router';
 import type { VIADPEngine } from './viadp-engine';
 import { PostgresCheckpointSaver, buildWorkflowGraph } from './langgraph';
 import type { WorkflowStateType } from './langgraph';
+import { createViadpDelegationNode } from './langgraph-nodes/viadp-delegation-node';
 
 // ============================================================================
 // WorkflowLoader - Parse YAML files, validate structure
@@ -350,6 +351,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
   private readonly modelRouter: ModelRouter;
   private readonly viadpEngine: VIADPEngine;
   private compiledGraph: ReturnType<typeof buildWorkflowGraph> | null = null;
+  private viadpNode: ReturnType<typeof createViadpDelegationNode> | null = null;
 
   constructor(deps: WorkflowExecutorDeps) {
     super();
@@ -358,6 +360,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     this.agentManager = deps.agentManager;
     this.modelRouter = deps.modelRouter;
     this.viadpEngine = deps.viadpEngine;
+    this.viadpNode = createViadpDelegationNode(this.viadpEngine);
   }
 
   // --------------------------------------------------------------------------

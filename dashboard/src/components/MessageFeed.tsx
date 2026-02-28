@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn } from "@/lib/utils";
 import type { Message, Agent } from "@/lib/mock-data";
+import { Badge } from "@/components/ui/badge";
 
 interface MessageFeedProps {
   messages: Message[];
@@ -104,14 +105,15 @@ export default function MessageFeed({ messages, agents }: MessageFeedProps) {
       {/* Type filter pills */}
       <div className="flex gap-1.5 mb-3 flex-wrap">
         {["all", "task", "question", "escalation"].map((type) => (
-          <button
+          <Badge
             key={type}
+            variant="outline"
             onClick={() => setTypeFilter(type)}
             className={cn(
-              "text-[10px] px-2.5 py-1 rounded-full transition-colors font-medium",
+              "text-[10px] cursor-pointer transition-colors font-medium",
               typeFilter === type
-                ? "bg-primary/30 text-primary-light border border-primary/40"
-                : "bg-surface-light/30 text-text-muted border border-transparent hover:bg-surface-light/50"
+                ? "bg-primary/30 text-primary-light border-primary/40"
+                : "bg-surface-light/30 text-text-muted border-transparent hover:bg-surface-light/50"
             )}
           >
             {type === "all"
@@ -119,7 +121,7 @@ export default function MessageFeed({ messages, agents }: MessageFeedProps) {
               : isAr
                 ? typeLabels[type].ar
                 : typeLabels[type].en}
-          </button>
+          </Badge>
         ))}
       </div>
 
@@ -161,15 +163,16 @@ export default function MessageFeed({ messages, agents }: MessageFeedProps) {
                         </span>
                       </>
                     )}
-                    <span
-                      className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                    <Badge
+                      variant="outline"
+                      className="text-[9px] px-1.5 py-0.5 font-medium border-transparent"
                       style={{
                         backgroundColor: `${typeColors[msg.type] ?? '#6b7280'}20`,
                         color: typeColors[msg.type] ?? '#6b7280',
                       }}
                     >
                       {isAr ? (typeLabels[msg.type]?.ar ?? msg.type) : (typeLabels[msg.type]?.en ?? msg.type)}
-                    </span>
+                    </Badge>
                     <span className="text-[10px] text-text-muted/50 ltr-nums ms-auto">
                       {formatTimestamp(msg.timestamp)}
                     </span>

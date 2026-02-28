@@ -13,6 +13,7 @@ export interface Agent {
   temperature: number;
   tokensUsed: number;
   cost: number;
+  dailyCap?: number;
 }
 
 export interface Task {
@@ -111,6 +112,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.4,
     tokensUsed: 125000,
     cost: 4.85,
+    dailyCap: 8,
   },
   {
     id: "product-owner",
@@ -127,6 +129,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.5,
     tokensUsed: 89000,
     cost: 3.20,
+    dailyCap: 8,
   },
   {
     id: "business-analyst",
@@ -143,6 +146,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.4,
     tokensUsed: 67000,
     cost: 2.50,
+    dailyCap: 8,
   },
   {
     id: "scrum-master",
@@ -159,6 +163,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 45000,
     cost: 1.10,
+    dailyCap: 3,
   },
   {
     id: "architect",
@@ -175,6 +180,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 178000,
     cost: 12.40,
+    dailyCap: 15,
   },
   {
     id: "ux-designer",
@@ -191,6 +197,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.7,
     tokensUsed: 56000,
     cost: 2.10,
+    dailyCap: 8,
   },
   {
     id: "frontend-dev",
@@ -207,6 +214,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.5,
     tokensUsed: 134000,
     cost: 4.80,
+    dailyCap: 8,
   },
   {
     id: "backend-dev",
@@ -223,6 +231,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 165000,
     cost: 11.50,
+    dailyCap: 15,
   },
   {
     id: "qa-architect",
@@ -239,6 +248,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 112000,
     cost: 8.90,
+    dailyCap: 15,
   },
   {
     id: "devops-engineer",
@@ -255,6 +265,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 78000,
     cost: 2.90,
+    dailyCap: 8,
   },
   {
     id: "security-specialist",
@@ -271,6 +282,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.3,
     tokensUsed: 145000,
     cost: 10.20,
+    dailyCap: 15,
   },
   {
     id: "tech-writer",
@@ -287,6 +299,7 @@ export const mockAgents: Agent[] = [
     temperature: 0.6,
     tokensUsed: 92000,
     cost: 5.60,
+    dailyCap: 5,
   },
 ];
 

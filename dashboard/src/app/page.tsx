@@ -43,6 +43,7 @@ import ViadpAuditLog from "@/components/ViadpAuditLog";
 import ConversationPanel from "@/components/ConversationPanel";
 import MemoryExplorer from "@/components/MemoryExplorer";
 import VoiceTranscriptViewer from "@/components/VoiceTranscriptViewer";
+import { Button } from "@/components/ui/button";
 
 // --- Agent metadata lookup for the 12 known BMAD agents ---
 const AGENT_META: Record<
@@ -616,7 +617,7 @@ function DashboardContent() {
               <div className="flex flex-col items-center gap-4">
                 <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                 <p className="text-sm text-text-muted">
-                  {t("common.loading") || (locale === "ar" ? "جارٍ الاتصال بالبوابة..." : "Connecting to gateway...")}
+                  {t("common.loading")}
                 </p>
               </div>
             </div>
@@ -677,8 +678,8 @@ function DashboardContent() {
               />
               <span className="text-[10px] text-text-muted">
                 {isConnected
-                  ? t("common.connected") || (locale === "ar" ? "متصل" : "Connected")
-                  : t("common.offline") || (locale === "ar" ? "غير متصل" : "Offline")}
+                  ? t("common.connected")
+                  : t("common.offline")}
               </span>
             </div>
           </div>
@@ -748,7 +749,7 @@ function DashboardContent() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {agents.length === 0 ? (
                 <div className="col-span-full text-center text-text-muted/40 text-sm py-16">
-                  {locale === "ar" ? "لا يوجد وكلاء متصلين" : "No agents connected"}
+                  {t("agents.noAgents")}
                 </div>
               ) : (
                 agents.map((agent) => (
@@ -777,9 +778,7 @@ function DashboardContent() {
                         ? locale === "ar"
                           ? agent.currentTaskAr
                           : agent.currentTask
-                        : locale === "ar"
-                          ? "لا يوجد مهمة"
-                          : "No active task"}
+                        : t("agents.noActiveTask")}
                     </p>
                     <div className="flex items-center justify-between text-[10px] text-text-muted pt-2 border-t border-border/20">
                       <span className="ltr-nums">{agent.model}</span>
@@ -832,7 +831,7 @@ function DashboardContent() {
                 {/* Gateway URL */}
                 <div>
                   <label className="block text-sm text-text-secondary mb-2">
-                    {t("settings.gatewayUrl") || (locale === "ar" ? "عنوان البوابة" : "Gateway URL")}
+                    {t("settings.gatewayUrl")}
                   </label>
                   <input
                     type="text"
@@ -845,7 +844,7 @@ function DashboardContent() {
                 {/* Default model */}
                 <div>
                   <label className="block text-sm text-text-secondary mb-2">
-                    {t("settings.defaultModel") || (locale === "ar" ? "النموذج الافتراضي" : "Default Model")}
+                    {t("settings.defaultModel")}
                   </label>
                   <select className="w-full bg-surface-light/50 text-text-primary text-sm rounded-lg px-4 py-2.5 border border-border/30 focus:outline-none focus:border-primary/50">
                     <option>claude-opus-4-6</option>
@@ -860,7 +859,7 @@ function DashboardContent() {
                 {/* Budget limit */}
                 <div>
                   <label className="block text-sm text-text-secondary mb-2">
-                    {t("settings.dailyBudgetLimit") || (locale === "ar" ? "حد الميزانية اليومية ($)" : "Daily Budget Limit ($)")}
+                    {t("settings.dailyBudgetLimit")}
                   </label>
                   <input
                     type="number"
@@ -873,7 +872,7 @@ function DashboardContent() {
                 {/* Auto-scroll messages */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text-secondary">
-                    {t("settings.autoScroll") || (locale === "ar" ? "التمرير التلقائي للرسائل" : "Auto-scroll Messages")}
+                    {t("settings.autoScroll")}
                   </span>
                   <button className="w-12 h-6 rounded-full bg-primary relative transition-colors">
                     <div className="w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all" style={{ insetInlineEnd: "2px" }} />
@@ -883,7 +882,7 @@ function DashboardContent() {
                 {/* Notifications */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-text-secondary">
-                    {t("settings.escalationNotifications") || (locale === "ar" ? "إشعارات التصعيد" : "Escalation Notifications")}
+                    {t("settings.escalationNotifications")}
                   </span>
                   <button className="w-12 h-6 rounded-full bg-primary relative transition-colors">
                     <div className="w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all" style={{ insetInlineEnd: "2px" }} />
@@ -892,9 +891,9 @@ function DashboardContent() {
 
                 {/* Save button */}
                 <div className="pt-4 border-t border-border/30">
-                  <button className="px-6 py-2.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-light transition-colors">
+                  <Button className="bg-primary text-white hover:bg-primary-light">
                     {t("settings.save") || t("common.save")}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

@@ -38,6 +38,12 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
     viadpEngine;
     modelRouter;
     voiceHandler;
+    messageBus;
+    agentRegistry;
+    toolRunner;
+    workflowExecutor;
+    sdkToolRegistry;
+    sdkSandboxManager;
     constructor(deps) {
         super();
         this.sessionManager = deps.sessionManager;
@@ -46,6 +52,12 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
         this.viadpEngine = deps.viadpEngine;
         this.modelRouter = deps.modelRouter;
         this.voiceHandler = deps.voiceHandler;
+        this.messageBus = deps.messageBus ?? null;
+        this.agentRegistry = deps.agentRegistry ?? null;
+        this.toolRunner = deps.toolRunner ?? null;
+        this.workflowExecutor = deps.workflowExecutor ?? null;
+        this.sdkToolRegistry = deps.toolRegistry ?? null;
+        this.sdkSandboxManager = deps.sandboxManager ?? null;
     }
     /**
      * Attaches the WebSocket server to an existing HTTP server.
@@ -271,6 +283,34 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
             case 'voice.status':
                 this.handleVoiceStatus(clientId);
                 break;
+            case 'voice.transcribe':
+                this.handleVoiceTranscribe(clientId, parsed);
+                break;
+            case 'voice.synthesize':
+                this.handleVoiceSynthesize(clientId, parsed);
+                break;
+            case 'voice.languages':
+                this.handleVoiceLanguages(clientId);
+                break;
+            // -- Workflow control --
+            case 'workflow.list':
+                this.handleWorkflowList(clientId);
+                break;
+            case 'workflow.start':
+                this.handleWorkflowStart(clientId, parsed);
+                break;
+            case 'workflow.pause':
+                this.handleWorkflowPause(clientId, parsed);
+                break;
+            case 'workflow.resume':
+                this.handleWorkflowResume(clientId, parsed);
+                break;
+            case 'workflow.progress':
+                this.handleWorkflowProgress(clientId, parsed);
+                break;
+            case 'workflow.cancel':
+                this.handleWorkflowCancel(clientId, parsed);
+                break;
             // -- System --
             case 'ping':
                 this.sendToClient(clientId, {
@@ -280,6 +320,154 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
                     sessionId: parsed.sessionId ?? '',
                 });
                 break;
+            // -- OpenClaw messages --
+            case 'openclaw.agent.register': {
+                const { agentId, capabilities } = parsed.payload ?? {};
+                if (this.agentRegistry && agentId) {
+                    this.agentRegistry.register(agentId, { capabilities: capabilities ?? [] });
+                }
+                this.sendToClient(clientId, {
+                    type: 'openclaw.agent.registered',
+                    payload: { agentId, success: true },
+                    timestamp: new Date().toISOString(),
+                    sessionId: parsed.sessionId ?? '',
+                });
+                break;
+            }
+            case 'openclaw.agent.heartbeat': {
+                const agentId = parsed.payload?.agentId;
+                if (this.agentRegistry && agentId) {
+                    this.agentRegistry.heartbeat(agentId);
+                }
+                this.sendToClient(clientId, {
+                    type: 'openclaw.agent.heartbeat.ack',
+                    payload: { agentId, timestamp: new Date().toISOString() },
+                    timestamp: new Date().toISOString(),
+                    sessionId: parsed.sessionId ?? '',
+                });
+                break;
+            }
+            case 'openclaw.agent.capabilities': {
+                const agentId = parsed.payload?.agentId;
+                const capabilities = this.agentRegistry?.getCapabilities(agentId) ?? null;
+                this.sendToClient(clientId, {
+                    type: 'openclaw.agent.capabilities',
+                    payload: { agentId, capabilities },
+                    timestamp: new Date().toISOString(),
+                    sessionId: parsed.sessionId ?? '',
+                });
+                break;
+            }
+            case 'openclaw.tool.list': {
+                const tools = this.toolRunner?.listTools() ?? [];
+                this.sendToClient(clientId, {
+                    type: 'openclaw.tool.list',
+                    payload: { tools },
+                    timestamp: new Date().toISOString(),
+                    sessionId: parsed.sessionId ?? '',
+                });
+                break;
+            }
+            case 'openclaw.tool.execute': {
+                const { name, input } = parsed.payload ?? {};
+                if (this.toolRunner && name) {
+                    this.toolRunner.executeTool(name, input ?? {}, {
+                        sessionId: parsed.sessionId,
+                        agentId: parsed.payload?.agentId,
+                    }).then((result) => {
+                        this.sendToClient(clientId, {
+                            type: 'openclaw.tool.result',
+                            payload: result,
+                            timestamp: new Date().toISOString(),
+                            sessionId: parsed.sessionId ?? '',
+                        });
+                    }).catch((error) => {
+                        this.sendToClient(clientId, {
+                            type: 'openclaw.tool.error',
+                            payload: { error: error?.message ?? 'Tool execution failed' },
+                            timestamp: new Date().toISOString(),
+                            sessionId: parsed.sessionId ?? '',
+                        });
+                    });
+                }
+                else {
+                    this.sendError(clientId, 'TOOL_NAME_REQUIRED', 'Tool name is required');
+                }
+                break;
+            }
+            // -- SDK Tool execution --
+            case 'tool.list': {
+                const client2 = this.clients.get(clientId);
+                const reqAgentId = client2?.agentId ?? parsed.payload?.agentId;
+                const tools = reqAgentId && this.sdkToolRegistry
+                    ? this.sdkToolRegistry.listForAgent(reqAgentId).map(t => ({
+                        name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist,
+                    }))
+                    : (this.sdkToolRegistry?.listAll() ?? []).map(t => ({
+                        name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist,
+                    }));
+                this.sendToClient(clientId, {
+                    type: 'tool.list',
+                    payload: { tools },
+                    timestamp: new Date().toISOString(),
+                    sessionId: parsed.sessionId ?? '',
+                });
+                break;
+            }
+            case 'tool.execute': {
+                const execClient = this.clients.get(clientId);
+                const execAgentId = execClient?.agentId ?? parsed.payload?.agentId;
+                if (!execAgentId) {
+                    this.sendError(clientId, 'AGENT_ID_REQUIRED', 'Agent ID is required for tool execution');
+                    break;
+                }
+                const toolName = parsed.payload?.name;
+                if (!toolName || !this.sdkToolRegistry) {
+                    this.sendError(clientId, 'TOOL_NAME_REQUIRED', 'Tool name is required');
+                    break;
+                }
+                const toolDef = this.sdkToolRegistry.get(toolName);
+                if (!toolDef) {
+                    this.sendError(clientId, 'TOOL_NOT_FOUND', `Tool "${toolName}" not found`);
+                    break;
+                }
+                if (!toolDef.agentWhitelist.includes(execAgentId)) {
+                    this.sendError(clientId, 'TOOL_NOT_ALLOWED', `Agent "${execAgentId}" is not whitelisted for tool "${toolName}"`);
+                    break;
+                }
+                const toolInput = (parsed.payload?.input ?? {});
+                const execContext = {
+                    agentId: execAgentId,
+                    sessionId: parsed.sessionId ?? '',
+                    taskId: parsed.payload?.taskId ?? null,
+                    workingDir: '/workspace',
+                    timeout: 300,
+                };
+                toolDef.execute(toolInput, execContext)
+                    .then((result) => {
+                    this.sendToClient(clientId, {
+                        type: 'tool.result',
+                        payload: { name: toolName, result },
+                        timestamp: new Date().toISOString(),
+                        sessionId: parsed.sessionId ?? '',
+                    });
+                    this.broadcastToDashboards({
+                        type: 'tool.executed',
+                        payload: { agentId: execAgentId, tool: toolName, success: result.success, duration: result.duration },
+                        timestamp: new Date().toISOString(),
+                        sessionId: parsed.sessionId ?? '',
+                    });
+                })
+                    .catch((error) => {
+                    this.sendToClient(clientId, {
+                        type: 'tool.error',
+                        payload: { name: toolName, error: error?.message ?? 'Tool execution failed' },
+                        timestamp: new Date().toISOString(),
+                        sessionId: parsed.sessionId ?? '',
+                    });
+                });
+                break;
+            }
             default:
                 this.sendToClient(clientId, {
                     type: 'system.error',
@@ -807,6 +995,223 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
         });
     }
     // =========================================================================
+    // Voice WS Handlers (STT/TTS)
+    // =========================================================================
+    async handleVoiceTranscribe(clientId, msg) {
+        try {
+            const audioData = msg.payload?.audio;
+            const language = msg.payload?.language;
+            if (!audioData) {
+                this.sendError(clientId, 'AUDIO_REQUIRED', 'audio (base64) is required for transcription');
+                return;
+            }
+            const audioBuffer = Buffer.from(audioData, 'base64');
+            const result = await this.voiceHandler.transcribe(audioBuffer, language);
+            this.sendToClient(clientId, {
+                type: 'voice.transcribed',
+                payload: result,
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+            this.broadcastToDashboards({
+                type: 'voice.transcribed',
+                payload: result,
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'TRANSCRIBE_FAILED', error?.message ?? 'Transcription failed');
+        }
+    }
+    async handleVoiceSynthesize(clientId, msg) {
+        try {
+            const text = msg.payload?.text;
+            const language = msg.payload?.language ?? 'en';
+            const voiceId = msg.payload?.voiceId;
+            if (!text) {
+                this.sendError(clientId, 'TEXT_REQUIRED', 'text is required for synthesis');
+                return;
+            }
+            const result = await this.voiceHandler.synthesize({
+                text,
+                language,
+                voiceId,
+            });
+            this.sendToClient(clientId, {
+                type: 'voice.synthesized',
+                payload: {
+                    audio: result.audioBase64,
+                    durationMs: result.durationMs,
+                    language,
+                },
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+            this.broadcastToDashboards({
+                type: 'voice.synthesized',
+                payload: {
+                    text,
+                    durationMs: result.durationMs,
+                    language,
+                },
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'SYNTHESIZE_FAILED', error?.message ?? 'Synthesis failed');
+        }
+    }
+    handleVoiceLanguages(clientId) {
+        this.sendToClient(clientId, {
+            type: 'voice.languages',
+            payload: {
+                stt: ['en', 'ar', 'en-US', 'ar-SA'],
+                tts: ['en', 'ar', 'en-US', 'ar-SA'],
+                default: 'ar',
+            },
+            timestamp: new Date().toISOString(),
+            sessionId: '',
+        });
+    }
+    // =========================================================================
+    // Workflow WS Handlers
+    // =========================================================================
+    handleWorkflowList(clientId) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const definitions = this.workflowExecutor.listDefinitions();
+            this.sendToClient(clientId, {
+                type: 'workflow.list',
+                payload: { workflows: definitions },
+                timestamp: new Date().toISOString(),
+                sessionId: '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_LIST_FAILED', error?.message ?? 'Failed to list workflows');
+        }
+    }
+    async handleWorkflowStart(clientId, msg) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const { definitionName, sessionId } = msg.payload ?? {};
+            if (!definitionName || !sessionId) {
+                this.sendError(clientId, 'INVALID_PARAMS', 'definitionName and sessionId are required');
+                return;
+            }
+            const instance = await this.workflowExecutor.startWorkflow(definitionName, sessionId);
+            this.sendToClient(clientId, {
+                type: 'workflow.started',
+                payload: instance,
+                timestamp: new Date().toISOString(),
+                sessionId,
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_START_FAILED', error?.message ?? 'Failed to start workflow');
+        }
+    }
+    async handleWorkflowPause(clientId, msg) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const instanceId = msg.payload?.instanceId;
+            if (!instanceId) {
+                this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+                return;
+            }
+            await this.workflowExecutor.pauseWorkflow(instanceId);
+            this.sendToClient(clientId, {
+                type: 'workflow.paused',
+                payload: { instanceId },
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_PAUSE_FAILED', error?.message ?? 'Failed to pause workflow');
+        }
+    }
+    async handleWorkflowResume(clientId, msg) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const { instanceId, approvalData } = msg.payload ?? {};
+            if (!instanceId) {
+                this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+                return;
+            }
+            await this.workflowExecutor.resumeWorkflow(instanceId, approvalData);
+            this.sendToClient(clientId, {
+                type: 'workflow.resumed',
+                payload: { instanceId },
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_RESUME_FAILED', error?.message ?? 'Failed to resume workflow');
+        }
+    }
+    async handleWorkflowProgress(clientId, msg) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const instanceId = msg.payload?.instanceId;
+            if (!instanceId) {
+                this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+                return;
+            }
+            const progress = await this.workflowExecutor.getProgress(instanceId);
+            this.sendToClient(clientId, {
+                type: 'workflow.progress',
+                payload: progress,
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_PROGRESS_FAILED', error?.message ?? 'Failed to get progress');
+        }
+    }
+    async handleWorkflowCancel(clientId, msg) {
+        if (!this.workflowExecutor) {
+            this.sendError(clientId, 'WORKFLOW_NOT_AVAILABLE', 'WorkflowExecutor not configured');
+            return;
+        }
+        try {
+            const instanceId = msg.payload?.instanceId;
+            if (!instanceId) {
+                this.sendError(clientId, 'INVALID_PARAMS', 'instanceId is required');
+                return;
+            }
+            await this.workflowExecutor.cancelWorkflow(instanceId);
+            this.sendToClient(clientId, {
+                type: 'workflow.cancelled',
+                payload: { instanceId },
+                timestamp: new Date().toISOString(),
+                sessionId: msg.sessionId ?? '',
+            });
+        }
+        catch (error) {
+            this.sendError(clientId, 'WORKFLOW_CANCEL_FAILED', error?.message ?? 'Failed to cancel workflow');
+        }
+    }
+    // =========================================================================
     // Message Routing
     // =========================================================================
     /**
@@ -834,6 +1239,9 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
             console.warn(`[GatewayServer] Agent ${agentId} not connected, message queued`);
             return false;
         }
+        if (this.messageBus) {
+            this.messageBus.publish(`agent:${agentId}`, message);
+        }
         return this.sendToClient(clientId, message);
     }
     /**
@@ -847,6 +1255,9 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
                 this.sendToClient(clientId, message);
             }
         }
+        if (this.messageBus) {
+            this.messageBus.publish(`session:${sessionId}`, message);
+        }
     }
     /**
      * Broadcasts a message to all dashboard connections.
@@ -856,6 +1267,9 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
             if (client.type === 'dashboard' && client.ws.readyState === ws_1.WebSocket.OPEN) {
                 this.sendToClient(clientId, message);
             }
+        }
+        if (this.messageBus) {
+            this.messageBus.publish('dashboard', message);
         }
     }
     /**
@@ -979,6 +1393,57 @@ class GatewayServer extends eventemitter3_1.EventEmitter {
                 sessionId: '',
             });
         });
+        // Workflow events
+        if (this.workflowExecutor) {
+            this.workflowExecutor.on('workflow:started', (instance) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.started',
+                    payload: instance,
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+            this.workflowExecutor.on('workflow:phase-changed', (instance, phase) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.phase-changed',
+                    payload: { instance, phase },
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+            this.workflowExecutor.on('workflow:step-completed', (instance, step) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.step-completed',
+                    payload: { instance, step },
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+            this.workflowExecutor.on('workflow:waiting-approval', (instance, approval) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.waiting-approval',
+                    payload: { instance, approval },
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+            this.workflowExecutor.on('workflow:completed', (instance) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.completed',
+                    payload: instance,
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+            this.workflowExecutor.on('workflow:failed', (instance, error) => {
+                this.broadcastToDashboards({
+                    type: 'workflow.failed',
+                    payload: { instance, error },
+                    timestamp: new Date().toISOString(),
+                    sessionId: instance.sessionId,
+                });
+            });
+        }
     }
     // =========================================================================
     // Heartbeat

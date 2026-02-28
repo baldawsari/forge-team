@@ -479,3 +479,72 @@ CREATE TABLE IF NOT EXISTS workflow_checkpoints (
 
 CREATE INDEX IF NOT EXISTS idx_wf_checkpoints_instance ON workflow_checkpoints (instance_id);
 CREATE INDEX IF NOT EXISTS idx_wf_checkpoints_thread ON workflow_checkpoints (thread_id);
+
+-- =============================================================================
+-- VIADP Reputation (economic self-regulation)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS viadp_reputation (
+    agent_id        TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    score           DOUBLE PRECISION NOT NULL DEFAULT 0.5
+                    CHECK (score >= 0.0 AND score <= 1.0),
+    bonds           DECIMAL NOT NULL DEFAULT 0,
+    heat_penalty    DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    delegations_total   INTEGER NOT NULL DEFAULT 0,
+    delegations_success INTEGER NOT NULL DEFAULT 0,
+    delegations_failed  INTEGER NOT NULL DEFAULT 0,
+    last_updated    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Seed viadp_reputation for all 12 agents
+INSERT INTO viadp_reputation (agent_id) VALUES
+    ('bmad-master'),
+    ('product-owner'),
+    ('business-analyst'),
+    ('scrum-master'),
+    ('architect'),
+    ('ux-designer'),
+    ('frontend-dev'),
+    ('backend-dev'),
+    ('qa-architect'),
+    ('devops-engineer'),
+    ('security-specialist'),
+    ('tech-writer')
+ON CONFLICT (agent_id) DO NOTHING;
+
+-- Enforce INSERT-only on viadp_audit_log (no UPDATE, no DELETE)
+CREATE OR REPLACE RULE viadp_audit_no_update AS
+    ON UPDATE TO viadp_audit_log DO INSTEAD NOTHING;
+
+CREATE OR REPLACE RULE viadp_audit_no_delete AS
+    ON DELETE TO viadp_audit_log DO INSTEAD NOTHING;
+
+-- Function to verify audit log hash chain integrity
+CREATE OR REPLACE FUNCTION verify_audit_hash_chain()
+RETURNS TABLE(valid BOOLEAN, broken_at INTEGER, total_entries BIGINT) AS $$
+DECLARE
+    prev_hash TEXT := 'genesis_000000000000';
+    entry RECORD;
+    seq INTEGER := 0;
+    is_valid BOOLEAN := TRUE;
+    broken INTEGER := NULL;
+BEGIN
+    FOR entry IN SELECT * FROM viadp_audit_log ORDER BY sequence_number ASC LOOP
+        IF entry.previous_hash != prev_hash THEN
+            is_valid := FALSE;
+            IF broken IS NULL THEN
+                broken := entry.sequence_number;
+            END IF;
+        END IF;
+        prev_hash := entry.hash;
+        seq := seq + 1;
+    END LOOP;
+
+    RETURN QUERY SELECT is_valid, broken, seq::BIGINT;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Composite indexes for common VIADP queries
+CREATE INDEX IF NOT EXISTS idx_delegations_status_created
+    ON viadp_delegations (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_delegation_timestamp
+    ON viadp_audit_log (delegation_id, timestamp DESC);

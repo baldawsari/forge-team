@@ -175,6 +175,16 @@ interface SocketEvents {
   workflow_update: (data: WorkflowUpdateEvent) => void;
   cost_update: (data: CostUpdateEvent) => void;
   party_mode_selection: (data: PartyModeSelectionEvent) => void;
+  voice_transcript: (data: {
+    id: string;
+    sessionId: string;
+    direction: 'stt' | 'tts';
+    language: string;
+    text: string;
+    confidence?: number;
+    duration: string;
+    timestamp: string;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SidebarProps {
   activeTab: string;
@@ -32,19 +33,19 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: "dashboard", icon: LayoutDashboard, enLabel: "Dashboard", arLabel: "لوحة التحكم" },
-  { id: "conversation", icon: MessageCircle, enLabel: "Conversation", arLabel: "المحادثة" },
-  { id: "kanban", icon: KanbanSquare, enLabel: "Kanban", arLabel: "كانبان" },
-  { id: "agents", icon: Bot, enLabel: "Agents", arLabel: "الوكلاء" },
-  { id: "workflows", icon: GitBranch, enLabel: "Workflows", arLabel: "سير العمل" },
-  { id: "memory", icon: Brain, enLabel: "Memory", arLabel: "الذاكرة" },
-  { id: "modelsCost", icon: DollarSign, enLabel: "Models & Cost", arLabel: "النماذج والتكلفة" },
-  { id: "viadpAudit", icon: Shield, enLabel: "VIADP Audit", arLabel: "تدقيق التفويض" },
-  { id: "settings", icon: Settings, enLabel: "Settings", arLabel: "الإعدادات" },
+  { id: "dashboard", icon: LayoutDashboard, labelKey: "nav.dashboard" },
+  { id: "conversation", icon: MessageCircle, labelKey: "nav.conversation" },
+  { id: "kanban", icon: KanbanSquare, labelKey: "nav.kanban" },
+  { id: "agents", icon: Bot, labelKey: "nav.agents" },
+  { id: "workflows", icon: GitBranch, labelKey: "nav.workflows" },
+  { id: "memory", icon: Brain, labelKey: "nav.memory" },
+  { id: "modelsCost", icon: DollarSign, labelKey: "nav.modelsCost" },
+  { id: "viadpAudit", icon: Shield, labelKey: "nav.viadpAudit" },
+  { id: "settings", icon: Settings, labelKey: "nav.settings" },
 ];
 
 export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTheme, mobileOpen, onClose, onCollapse }: SidebarProps) {
-  const { locale, setLocale, direction } = useLocale();
+  const { locale, setLocale, direction, t } = useLocale();
   const [collapsed, setCollapsed] = useState(false);
 
   const isRtl = direction === "rtl";
@@ -70,10 +71,10 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
         {!collapsed && (
           <div className="overflow-hidden flex-1 min-w-0">
             <h1 className="text-sm font-bold text-text-primary whitespace-nowrap">
-              {locale === "ar" ? "فورج تيم" : "ForgeTeam"}
+              {t("app.title")}
             </h1>
             <p className="text-[10px] text-text-muted whitespace-nowrap">
-              {locale === "ar" ? "إصدار BMAD-Claw" : "BMAD-Claw Edition"}
+              {t("app.subtitle")}
             </p>
           </div>
         )}
@@ -93,7 +94,8 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          return (
+          const label = t(item.labelKey);
+          const button = (
             <button
               key={item.id}
               onClick={() => handleTabChange(item.id)}
@@ -102,60 +104,88 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
                 isActive && "active",
                 collapsed && "justify-center px-3"
               )}
-              title={collapsed ? (locale === "ar" ? item.arLabel : item.enLabel) : undefined}
             >
               <Icon size={20} className="shrink-0" />
               {!collapsed && (
-                <span className="whitespace-nowrap">
-                  {locale === "ar" ? item.arLabel : item.enLabel}
-                </span>
+                <span className="whitespace-nowrap">{label}</span>
               )}
             </button>
           );
+          if (collapsed) {
+            return (
+              <Tooltip key={item.id}>
+                <TooltipTrigger asChild>{button}</TooltipTrigger>
+                <TooltipContent side={isRtl ? "left" : "right"}>
+                  <p>{label}</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+          return button;
         })}
       </nav>
 
       {/* Bottom controls */}
       <div className="px-3 py-4 space-y-2 border-t border-border/40">
         {/* Language toggle */}
-        <button
-          onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
-          className={cn(
-            "sidebar-link w-full",
-            collapsed && "justify-center px-3"
-          )}
-          title={collapsed ? (locale === "ar" ? "English" : "العربية") : undefined}
-        >
-          <Languages size={20} className="shrink-0" />
-          {!collapsed && (
-            <span className="whitespace-nowrap">
-              {locale === "ar" ? "English" : "العربية"}
-            </span>
-          )}
-        </button>
+        {(() => {
+          const langLabel = locale === "ar" ? "English" : "\u0627\u0644\u0639\u0631\u0628\u064A\u0629";
+          const langButton = (
+            <button
+              onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
+              className={cn(
+                "sidebar-link w-full",
+                collapsed && "justify-center px-3"
+              )}
+            >
+              <Languages size={20} className="shrink-0" />
+              {!collapsed && (
+                <span className="whitespace-nowrap">{langLabel}</span>
+              )}
+            </button>
+          );
+          if (collapsed) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>{langButton}</TooltipTrigger>
+                <TooltipContent side={isRtl ? "left" : "right"}>
+                  <p>{langLabel}</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+          return langButton;
+        })()}
 
         {/* Theme toggle */}
-        <button
-          onClick={onToggleTheme}
-          className={cn(
-            "sidebar-link w-full",
-            collapsed && "justify-center px-3"
-          )}
-          title={collapsed ? (isDarkMode ? "Light" : "Dark") : undefined}
-        >
-          {isDarkMode ? <Sun size={20} className="shrink-0" /> : <Moon size={20} className="shrink-0" />}
-          {!collapsed && (
-            <span className="whitespace-nowrap">
-              {isDarkMode
-                ? locale === "ar"
-                  ? "فاتح"
-                  : "Light"
-                : locale === "ar"
-                  ? "داكن"
-                  : "Dark"}
-            </span>
-          )}
-        </button>
+        {(() => {
+          const themeLabel = isDarkMode ? t("common.light") : t("common.dark");
+          const themeButton = (
+            <button
+              onClick={onToggleTheme}
+              className={cn(
+                "sidebar-link w-full",
+                collapsed && "justify-center px-3"
+              )}
+            >
+              {isDarkMode ? <Sun size={20} className="shrink-0" /> : <Moon size={20} className="shrink-0" />}
+              {!collapsed && (
+                <span className="whitespace-nowrap">{themeLabel}</span>
+              )}
+            </button>
+          );
+          if (collapsed) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>{themeButton}</TooltipTrigger>
+                <TooltipContent side={isRtl ? "left" : "right"}>
+                  <p>{themeLabel}</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+          return themeButton;
+        })()}
 
         {/* Collapse toggle */}
         <button
@@ -177,9 +207,7 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
             <ChevronLeft size={20} className="shrink-0" />
           )}
           {!collapsed && (
-            <span className="whitespace-nowrap">
-              {locale === "ar" ? "طي" : "Collapse"}
-            </span>
+            <span className="whitespace-nowrap">{t("common.collapse")}</span>
           )}
         </button>
       </div>
@@ -187,13 +215,12 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
   );
 
   return (
-    <>
+    <TooltipProvider>
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "fixed top-0 h-screen z-50 flex-col transition-all duration-300",
-          "bg-gradient-to-b from-[#0f1628] to-[#0a0f1e] border-border",
-          isRtl ? "right-0 border-l" : "left-0 border-r",
+          "fixed top-0 start-0 h-screen z-50 flex-col transition-all duration-300",
+          "bg-gradient-to-b from-[#0f1628] to-[#0a0f1e]",
           collapsed ? "w-[68px]" : "w-[240px]",
           "hidden lg:flex"
         )}
@@ -215,9 +242,8 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
           {/* Drawer */}
           <aside
             className={cn(
-              "absolute top-0 h-full w-[280px] flex flex-col transition-transform duration-300",
-              "bg-gradient-to-b from-[#0f1628] to-[#0a0f1e]",
-              isRtl ? "right-0" : "left-0"
+              "absolute top-0 start-0 h-full w-[280px] flex flex-col transition-transform duration-300",
+              "bg-gradient-to-b from-[#0f1628] to-[#0a0f1e]"
             )}
             style={{
               borderInlineEnd: "1px solid rgba(42, 74, 127, 0.4)",
@@ -227,6 +253,6 @@ export default function Sidebar({ activeTab, onTabChange, isDarkMode, onToggleTh
           </aside>
         </div>
       )}
-    </>
+    </TooltipProvider>
   );
 }

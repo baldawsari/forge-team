@@ -24,10 +24,14 @@
     "uuid": "^11.1.0",
     "ws": "^8.18.0",
     "yaml": "^2.7.0",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "dockerode": "^4.0.4",
+    "playwright": "^1.50.0",
+    "@octokit/rest": "^21.1.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
+    "@types/dockerode": "^3.3.34",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.0",
     "@types/pg": "^8.16.0",

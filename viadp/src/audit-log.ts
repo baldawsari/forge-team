@@ -325,6 +325,40 @@ export class AuditLog {
     };
   }
 
+  toJSON(): string {
+    return JSON.stringify({
+      entries: this.entries.map(e => ({
+        ...e,
+        timestamp: e.timestamp instanceof Date ? e.timestamp.toISOString() : e.timestamp,
+      })),
+      lastHash: this.lastHash,
+      sequenceCounter: this.sequenceCounter,
+    });
+  }
+
+  static fromDB(rows: { id: string; timestamp: string; type: string; delegation_id: string; from_agent: string; to_agent: string; action: string; data: Record<string, unknown>; hash: string; previous_hash: string; sequence_number: number }[]): AuditLog {
+    const log = new AuditLog();
+    for (const row of rows) {
+      const entry: AuditEntry = {
+        id: row.id,
+        timestamp: new Date(row.timestamp),
+        type: row.type as AuditAction,
+        delegationId: row.delegation_id,
+        from: row.from_agent,
+        to: row.to_agent,
+        action: row.action,
+        data: row.data,
+        hash: row.hash,
+        previousHash: row.previous_hash,
+        sequenceNumber: row.sequence_number,
+      };
+      log.entries.push(Object.freeze(entry) as AuditEntry);
+      log.lastHash = entry.hash;
+      log.sequenceCounter = entry.sequenceNumber + 1;
+    }
+    return log;
+  }
+
   /**
    * Import entries from a previously exported JSON log.
    * Verifies integrity of imported entries before accepting them.

@@ -10,21 +10,15 @@
 import { Pool, PoolClient } from 'pg';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import type { MemoryScope } from '@forge-team/shared';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type HierarchicalScope =
-  | 'company'
-  | 'team'
-  | 'project'
-  | 'agent'
-  | 'thread';
-
 export interface MemoryEntry {
   id: string;
-  scope: HierarchicalScope;
+  scope: MemoryScope;
   agentId: string | null;
   projectId: string | null;
   teamId: string | null;
@@ -52,7 +46,7 @@ export interface StoreOptions {
 }
 
 export interface SearchFilters {
-  scope?: HierarchicalScope;
+  scope?: MemoryScope;
   agentId?: string;
   projectId?: string;
   teamId?: string;
@@ -89,7 +83,7 @@ export class MemoryManager {
    * Store a memory entry at a given scope with content and metadata.
    */
   async store(
-    scope: HierarchicalScope,
+    scope: MemoryScope,
     content: string,
     metadata: Record<string, unknown> = {},
     options: StoreOptions = {},
@@ -524,7 +518,7 @@ export class MemoryManager {
   private rowToEntry(row: Record<string, unknown>): MemoryEntry {
     return {
       id: row.id as string,
-      scope: row.scope as HierarchicalScope,
+      scope: row.scope as MemoryScope,
       agentId: (row.agent_id as string) ?? null,
       projectId: (row.project_id as string) ?? null,
       teamId: (row.team_id as string) ?? null,
@@ -561,7 +555,7 @@ export class MemoryManager {
   }
 
   private async invalidateScopeCache(
-    scope: HierarchicalScope,
+    scope: MemoryScope,
     options: StoreOptions,
   ): Promise<void> {
     const patterns = [

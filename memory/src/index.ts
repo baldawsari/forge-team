@@ -5,7 +5,6 @@
 
 export {
   MemoryManager,
-  type HierarchicalScope,
   type MemoryEntry,
   type StoreOptions,
   type SearchFilters,

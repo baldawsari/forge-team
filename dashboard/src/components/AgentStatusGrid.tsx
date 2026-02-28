@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Cpu, Brain } from "lucide-react";
+import { Cpu, Brain } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn } from "@/lib/utils";
 import type { Agent } from "@/lib/mock-data";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 interface AgentStatusGridProps {
   agents: Agent[];
@@ -20,11 +22,13 @@ const statusLabels: Record<string, { en: string; ar: string }> = {
 function AgentDetailModal({
   agent,
   locale,
-  onClose,
+  open,
+  onOpenChange,
 }: {
   agent: Agent;
   locale: string;
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const isAr = locale === "ar";
   const { t } = useLocale();
@@ -33,16 +37,15 @@ function AgentDetailModal({
   const longTermEntries = Math.round(agent.tokensUsed / 5200);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="glass-card w-full max-w-md p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 end-4 text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <X size={20} />
-        </button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="glass-card border-border max-w-md">
+        <DialogHeader>
+          <DialogTitle className="sr-only">
+            {isAr ? agent.nameAr : agent.name}
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4">
           <div className="text-4xl">{agent.avatar}</div>
           <div>
             <h3 className="text-lg font-bold text-text-primary">
@@ -53,15 +56,15 @@ function AgentDetailModal({
             </p>
             <div className="flex items-center gap-2 mt-1">
               <span className={cn("status-dot", agent.status)} />
-              <span className="text-xs text-text-muted">
+              <Badge variant="outline" className="text-xs text-text-muted border-transparent px-0">
                 {isAr ? statusLabels[agent.status].ar : statusLabels[agent.status].en}
-              </span>
+              </Badge>
             </div>
           </div>
         </div>
 
         {/* Model info */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-light/50">
             <Cpu size={16} className="text-primary-light shrink-0" />
             <div>
@@ -79,7 +82,7 @@ function AgentDetailModal({
         </div>
 
         {/* Current task */}
-        <div className="border-t border-border/40 pt-4 mb-4">
+        <div className="border-t border-border/40 pt-4">
           <h4 className="text-sm font-semibold text-text-secondary mb-2">
             {t("agents.currentTask")}
           </h4>
@@ -111,7 +114,7 @@ function AgentDetailModal({
         </div>
 
         {/* Memory */}
-        <div className="border-t border-border/40 pt-4 mt-4">
+        <div className="border-t border-border/40 pt-4">
           <h4 className="text-sm font-semibold text-text-secondary mb-2 flex items-center gap-2">
             <Brain size={14} />
             {t("agents.memory")}
@@ -125,8 +128,8 @@ function AgentDetailModal({
             </p>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -168,9 +171,9 @@ export default function AgentStatusGrid({ agents }: AgentStatusGridProps) {
                   </p>
                   <div className="flex items-center gap-1.5">
                     <span className={cn("status-dot", agent.status)} style={{ width: 7, height: 7 }} />
-                    <span className="text-[10px] text-text-muted">
+                    <Badge variant="outline" className="text-[10px] text-text-muted border-transparent px-0 py-0 h-auto">
                       {isAr ? statusLabels[agent.status].ar : statusLabels[agent.status].en}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -191,7 +194,8 @@ export default function AgentStatusGrid({ agents }: AgentStatusGridProps) {
         <AgentDetailModal
           agent={selectedAgentData}
           locale={locale}
-          onClose={() => setSelectedAgent(null)}
+          open={!!selectedAgent}
+          onOpenChange={(open) => { if (!open) setSelectedAgent(null); }}
         />
       )}
     </>

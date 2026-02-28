@@ -26,5 +26,6 @@
   "canSpawnSubAgents": false,
   "approvalRequired": false,
   "memoryScope": "team",
-  "viadpRole": "both"
+  "viadpRole": "both",
+  "fileSearchStoreId": null
 }

@@ -7,6 +7,7 @@
 
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +38,8 @@ export interface VectorStoreConfig {
   tableName?: string;
   dimensions?: number;
   distanceMetric?: 'cosine' | 'l2' | 'inner_product';
+  apiKey?: string;
+  embeddingModel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,12 +51,22 @@ export class VectorStore {
   private tableName: string;
   private dimensions: number;
   private distanceMetric: 'cosine' | 'l2' | 'inner_product';
+  private genAI: GoogleGenerativeAI | null;
+  private embeddingModel: string;
 
   constructor(pool: Pool, config: VectorStoreConfig = {}) {
     this.pool = pool;
     this.tableName = config.tableName ?? 'vector_entries';
-    this.dimensions = config.dimensions ?? 1536;
+    this.dimensions = config.dimensions ?? 768;
     this.distanceMetric = config.distanceMetric ?? 'cosine';
+    this.embeddingModel = config.embeddingModel ?? 'text-embedding-004';
+
+    const apiKey = config.apiKey ?? process.env.GOOGLE_AI_API_KEY;
+    this.genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+
+    if (!this.genAI) {
+      console.warn('[VectorStore] No GOOGLE_AI_API_KEY — using fallback hash embeddings');
+    }
   }
 
   /**
@@ -98,28 +111,28 @@ export class VectorStore {
     }
   }
 
-  /**
-   * Generate an embedding vector for the given text.
-   *
-   * This is a deterministic hash-based embedding generator that maps text
-   * to a vector space. In production, replace this with an actual model
-   * call (e.g., text-embedding-3-small from OpenAI or Gemini embedding).
-   */
-  embed(text: string): number[] {
+  async embed(text: string): Promise<number[]> {
+    if (!this.genAI) {
+      return this.hashEmbed(text);
+    }
+
+    const model = this.genAI.getGenerativeModel({ model: this.embeddingModel });
+    const result = await model.embedContent(text);
+    return result.embedding.values;
+  }
+
+  private hashEmbed(text: string): number[] {
     const vector = new Array(this.dimensions).fill(0);
     const normalized = text.toLowerCase().trim();
 
-    // Use a seeded approach: each character influences multiple dimensions
     for (let i = 0; i < normalized.length; i++) {
       const code = normalized.charCodeAt(i);
-      // Spread character influence across the vector
       for (let d = 0; d < 8; d++) {
         const idx = ((code * 31 + i * 7 + d * 13) & 0x7fffffff) % this.dimensions;
         vector[idx] += Math.sin(code * (d + 1) + i) * 0.1;
       }
     }
 
-    // Normalize to unit vector (cosine similarity requires this)
     const magnitude = Math.sqrt(
       vector.reduce((sum: number, v: number) => sum + v * v, 0),
     );
@@ -187,7 +200,7 @@ export class VectorStore {
     id?: string,
   ): Promise<VectorEntry> {
     const entryId = id ?? uuidv4();
-    const embedding = this.embed(content);
+    const embedding = await this.embed(content);
     return this.upsert(entryId, content, embedding, metadata, namespace);
   }
 
@@ -199,7 +212,7 @@ export class VectorStore {
     topK: number = 10,
     filters: VectorSearchFilters = {},
   ): Promise<SimilarityResult[]> {
-    const queryEmbedding = this.embed(query);
+    const queryEmbedding = await this.embed(query);
     return this.similaritySearchByVector(queryEmbedding, topK, filters);
   }
 
@@ -333,7 +346,7 @@ export class VectorStore {
     content: string,
     metadata?: Record<string, unknown>,
   ): Promise<VectorEntry | null> {
-    const embedding = this.embed(content);
+    const embedding = await this.embed(content);
     const embeddingStr = `[${embedding.join(',')}]`;
     const now = new Date();
 

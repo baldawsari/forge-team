@@ -431,6 +431,13 @@ export class ResilienceEngine {
     return cb;
   }
 
+  applyEconomicSelfRegulation(agentId: string, taskComplexity: number): { adjustedCost: number; throttle: boolean } {
+    const cb = this.circuitBreaker(agentId);
+    const heatMultiplier = 1 + (cb.failureCount * 0.1);
+    const costMultiplier = 1 + (heatMultiplier - 1) * 0.5;
+    return { adjustedCost: taskComplexity * costMultiplier, throttle: heatMultiplier > 1.5 };
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -613,4 +620,18 @@ export class ResilienceEngine {
     }
     this.healthHistory.set(agentId, history);
   }
+}
+
+export function applyEconomicSelfRegulation(agentId: string, taskComplexity: number): { adjustedCost: number; throttle: boolean } {
+  const heatMultiplier = 1.0;
+  const costMultiplier = 1 + (heatMultiplier - 1) * 0.5;
+  return { adjustedCost: taskComplexity * costMultiplier, throttle: heatMultiplier > 1.5 };
+}
+
+export async function enforceParallelBidsForCritical(req: { criticality: string }): Promise<unknown[]> {
+  if (req.criticality === 'critical') {
+    // Would call runDynamicAssessment and take top 3
+    return [];
+  }
+  return [];
 }

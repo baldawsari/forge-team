@@ -18,6 +18,12 @@ import type { TaskManager } from './task-manager';
 import type { VIADPEngine } from './viadp-engine';
 import type { ModelRouter } from './model-router';
 import type { VoiceHandler } from './voice-handler';
+import type { MessageBus } from './openclaw/message-bus';
+import type { OpenClawAgentRegistry } from './openclaw/agent-registry';
+import type { ToolRunner } from './openclaw/tool-runner';
+import type { WorkflowExecutor } from './workflow-engine';
+import type { ToolRegistry } from './tools/tool-registry';
+import type { SandboxManager } from './tools/sandbox-manager';
 /** Type of connected client */
 export type ClientType = 'user' | 'agent' | 'dashboard';
 /** A connected WebSocket client */
@@ -75,6 +81,12 @@ export declare class GatewayServer extends EventEmitter<GatewayServerEvents> {
     private viadpEngine;
     private modelRouter;
     private voiceHandler;
+    private messageBus;
+    private agentRegistry;
+    private toolRunner;
+    private workflowExecutor;
+    private sdkToolRegistry;
+    private sdkSandboxManager;
     constructor(deps: {
         sessionManager: SessionManager;
         agentManager: AgentManager;
@@ -82,6 +94,12 @@ export declare class GatewayServer extends EventEmitter<GatewayServerEvents> {
         viadpEngine: VIADPEngine;
         modelRouter: ModelRouter;
         voiceHandler: VoiceHandler;
+        messageBus?: MessageBus;
+        agentRegistry?: OpenClawAgentRegistry;
+        toolRunner?: ToolRunner;
+        workflowExecutor?: WorkflowExecutor;
+        toolRegistry?: ToolRegistry;
+        sandboxManager?: SandboxManager;
     });
     /**
      * Attaches the WebSocket server to an existing HTTP server.
@@ -123,6 +141,15 @@ export declare class GatewayServer extends EventEmitter<GatewayServerEvents> {
     private handleModelAssignments;
     private handleModelCosts;
     private handleVoiceStatus;
+    private handleVoiceTranscribe;
+    private handleVoiceSynthesize;
+    private handleVoiceLanguages;
+    private handleWorkflowList;
+    private handleWorkflowStart;
+    private handleWorkflowPause;
+    private handleWorkflowResume;
+    private handleWorkflowProgress;
+    private handleWorkflowCancel;
     /**
      * Sends a message to a specific client by ID.
      */

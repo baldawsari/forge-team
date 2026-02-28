@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Brain, Database, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Agent } from "@/lib/mock-data";
 import { mockMemoryData, type AgentMemoryData } from "@/lib/mock-data";
+import { searchMemory, fetchMemoryStats } from "@/lib/api";
+import { useLocale } from "@/lib/locale-context";
 
 interface MemoryExplorerProps {
   agents: Agent[];
@@ -52,28 +54,55 @@ const mockSearchResults = [
   },
 ];
 
-const labels: Record<string, { en: string; ar: string }> = {
-  title: { en: "Memory Explorer", ar: "مستكشف الذاكرة" },
-  search: { en: "Search memory (RAG)...", ar: "بحث في الذاكرة (RAG)..." },
-  scope: { en: "Scope", ar: "النطاق" },
-  shortTerm: { en: "Short-Term", ar: "قصيرة المدى" },
-  longTerm: { en: "Long-Term", ar: "طويلة المدى" },
-  tokens: { en: "tokens", ar: "رمز" },
-  entries: { en: "entries", ar: "سجل" },
-  lastUpdated: { en: "Updated", ar: "تحديث" },
-  minutesAgo: { en: "min ago", ar: "دقيقة مضت" },
-  results: { en: "Search Results", ar: "نتائج البحث" },
-  relevance: { en: "Relevance", ar: "الصلة" },
-};
-
-function l(key: string, locale: string): string {
-  return labels[key]?.[locale === "ar" ? "ar" : "en"] ?? key;
-}
-
 export default function MemoryExplorer({ agents, locale, direction }: MemoryExplorerProps) {
+  const { t } = useLocale();
   const isAr = locale === "ar";
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("team");
+  const [searchResults, setSearchResults] = useState(mockSearchResults);
+  const [stats, setStats] = useState<any[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetchMemoryStats()
+      .then(data => setStats(data.stats))
+      .catch(() => {});
+  }, []);
+
+  const performSearch = useCallback(async (q: string) => {
+    if (!q.trim()) return;
+    try {
+      const data = await searchMemory(q, scope);
+      if (data.results.length > 0) {
+        setSearchResults(data.results.map((r: any) => ({
+          id: r.id,
+          title: r.content?.slice(0, 50) ?? 'Memory Entry',
+          titleAr: r.content?.slice(0, 50) ?? 'سجل ذاكرة',
+          snippet: r.content ?? '',
+          snippetAr: r.content ?? '',
+          source: r.agentId ?? 'system',
+          sourceAr: r.agentId ?? 'النظام',
+          score: r.importance ?? 0.5,
+        })));
+      }
+    } catch {
+      // Fall back to mock data - already set
+    }
+  }, [scope]);
+
+  const handleQueryChange = useCallback((value: string) => {
+    setQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim()) {
+      debounceRef.current = setTimeout(() => performSearch(value), 500);
+    }
+  }, [performSearch]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const memoryMap = new Map<string, AgentMemoryData>();
   for (const m of mockMemoryData) {
@@ -85,7 +114,7 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
       <div className="glass-card p-4">
         <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
           <Brain size={16} className="text-primary-light" />
-          {l("title", locale)}
+          {t("memory.title")}
         </h2>
 
         <div className="flex gap-3 mb-4">
@@ -95,8 +124,9 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
               type="text"
               dir="auto"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={l("search", locale)}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') performSearch(query); }}
+              placeholder={t("memory.search")}
               className="w-full ps-10 pe-4 py-2 rounded-lg bg-surface-light/40 border border-border/30 text-sm text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
@@ -116,9 +146,9 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
         {query.trim() && (
           <div className="space-y-2 mb-4">
             <h3 className="text-xs font-semibold text-text-secondary">
-              {l("results", locale)}
+              {t("memory.results")}
             </h3>
-            {mockSearchResults.map((result) => (
+            {searchResults.map((result) => (
               <div
                 key={result.id}
                 className="p-3 rounded-lg bg-surface-light/30 border border-border/20 hover:border-primary/30 transition-colors"
@@ -128,7 +158,7 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
                     {isAr ? result.titleAr : result.title}
                   </h4>
                   <span className="text-[10px] text-primary-light font-mono ltr-nums">
-                    {l("relevance", locale)}: {(result.score * 100).toFixed(0)}%
+                    {t("memory.relevance")}: {(result.score * 100).toFixed(0)}%
                   </span>
                 </div>
                 <p className="text-xs text-text-muted mb-1" dir="auto">
@@ -164,30 +194,30 @@ export default function MemoryExplorer({ agents, locale, direction }: MemoryExpl
                 <div className="p-2 rounded bg-surface-light/30">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-semibold text-text-secondary">
-                      {l("shortTerm", locale)}
+                      {t("memory.shortTerm")}
                     </span>
                     {mem && (
                       <span className="text-[10px] text-text-muted/60 flex items-center gap-1 ltr-nums">
                         <Clock size={10} />
-                        {mem.shortTermLastUpdated} {l("minutesAgo", locale)}
+                        {mem.shortTermLastUpdated} {t("memory.minutesAgo")}
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-text-primary ltr-nums">
-                    {mem ? mem.shortTermTokens.toLocaleString() : "0"} {l("tokens", locale)}
+                    {mem ? mem.shortTermTokens.toLocaleString() : "0"} {t("memory.tokens")}
                   </p>
                 </div>
 
                 <div className="p-2 rounded bg-surface-light/30">
                   <span className="text-[10px] font-semibold text-text-secondary">
-                    {l("longTerm", locale)}
+                    {t("memory.longTerm")}
                   </span>
                   <div className="flex items-center justify-between mt-1">
                     <p className="text-xs text-text-primary ltr-nums">
-                      {mem ? mem.longTermEntries : 0} {l("entries", locale)}
+                      {mem ? mem.longTermEntries : 0} {t("memory.entries")}
                     </p>
                     <p className="text-[10px] text-text-muted ltr-nums">
-                      {mem ? mem.longTermTokens.toLocaleString() : "0"} {l("tokens", locale)}
+                      {mem ? mem.longTermTokens.toLocaleString() : "0"} {t("memory.tokens")}
                     </p>
                   </div>
                 </div>

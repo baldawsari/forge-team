@@ -28,5 +28,6 @@
   "canSpawnSubAgents": true,
   "approvalRequired": false,
   "memoryScope": "project",
-  "viadpRole": "both"
+  "viadpRole": "both",
+  "fileSearchStoreId": null
 }

@@ -9,6 +9,7 @@
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import type { MemoryManager } from './memory-manager';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -289,7 +290,8 @@ export class Summarizer {
    */
   async checkAndCompact(
     sessionId: string,
-  ): Promise<{ compacted: boolean; summary?: string }> {
+    memoryManager?: MemoryManager,
+  ): Promise<{ compacted: boolean; summary?: string; summaryId?: string }> {
     const countResult = await this.pool.query(
       `SELECT COUNT(*) FROM memory_entries
        WHERE thread_id = $1 AND superseded_by IS NULL`,
@@ -325,6 +327,15 @@ export class Summarizer {
     }));
 
     const summary = await this.summarizeConversation(messages);
+
+    if (memoryManager) {
+      const result = await memoryManager.compact(sessionId, this.config.compactionThreshold);
+      return {
+        compacted: result.compactedCount > 0,
+        summary,
+        summaryId: result.summaryId,
+      };
+    }
 
     return { compacted: true, summary };
   }

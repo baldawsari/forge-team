@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "ForgeTeam",
-    "subtitle": "Autonomous SDLC Agent Platform"
+    "subtitle": "BMAD-Claw Edition"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -46,7 +46,10 @@
     "viewInConversation": "View in Conversation",
     "clearDemoData": "Clear Demo Data",
     "demoDataBanner": "Showing demo data — create a task to get started",
-    "demoBadge": "Demo"
+    "demoBadge": "Demo",
+    "createTask": "Create New Task",
+    "create": "Create",
+    "revisionFeedback": "Revision Feedback"
   },
   "agents": {
     "title": "Agent Status",
@@ -106,7 +109,12 @@
     "fallback2Model": "Fallback 2",
     "optimizeSuggestion": "Suggestion: Switch Frontend Dev from gemini-3.1-pro to gemini-flash-3 for routine tasks — estimated 30% savings",
     "budgetLimit": "Budget limit",
-    "total": "Total"
+    "total": "Total",
+    "save": "Save Changes",
+    "saved": "Changes saved successfully",
+    "saveFailed": "Failed to save changes",
+    "dailyCap": "Daily Cap ($)",
+    "searchAgent": "Search agent..."
   },
   "viadp": {
     "title": "VIADP Delegation Audit",
@@ -142,7 +150,8 @@
     "connected": "Connected",
     "offline": "Offline",
     "connectingGateway": "Connecting to gateway...",
-    "total": "Total"
+    "total": "Total",
+    "create": "Create"
   },
   "conversation": {
     "title": "Conversation",
@@ -181,7 +190,10 @@
     "minutesAgo": "min ago",
     "tokensUsed": "tokens used",
     "search": "Search memory...",
-    "scope": "Scope"
+    "scope": "Scope",
+    "tokens": "tokens",
+    "results": "Results",
+    "relevance": "Relevance"
   },
   "settings": {
     "gatewayUrl": "Gateway URL",
@@ -192,10 +204,22 @@
     "save": "Save Settings"
   },
   "voice": {
+    "title": "Voice Transcripts",
     "transcripts": "Voice Transcripts",
     "notConfigured": "Voice not configured",
     "recording": "Recording...",
-    "transcribing": "Transcribing..."
+    "transcribing": "Transcribing...",
+    "allSessions": "All Sessions",
+    "session": "Session",
+    "language": "Language",
+    "all": "All",
+    "arabic": "Arabic",
+    "english": "English",
+    "confidence": "Confidence",
+    "duration": "Duration",
+    "noTranscripts": "No transcripts found",
+    "sttLabel": "User \u2192 System",
+    "ttsLabel": "System \u2192 User"
   },
   "partyMode": {
     "title": "Party Mode",

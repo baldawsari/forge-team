@@ -22,10 +22,12 @@
       "@forge-team/shared": ["../shared/types/index.ts"],
       "@forge-team/shared/*": ["../shared/*"],
       "@forge-team/viadp": ["../viadp/src/index.ts"],
-      "@forge-team/viadp/*": ["../viadp/src/*"]
+      "@forge-team/viadp/*": ["../viadp/src/*"],
+      "@forge-team/memory": ["../memory/src/index.ts"],
+      "@forge-team/memory/*": ["../memory/src/*"]
     },
     "baseUrl": "."
   },
-  "include": ["src/**/*", "../shared/**/*", "../viadp/src/**/*"],
+  "include": ["src/**/*", "../shared/**/*", "../viadp/src/**/*", "../memory/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

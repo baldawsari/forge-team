@@ -7,7 +7,7 @@
  * task management, delegation protocol, and real-time dashboard updates.
  *
  * Architecture:
- * - Express HTTP server on port 3001 (health checks, REST API)
+ * - Express HTTP server on port 18789 (health checks, REST API)
  * - WebSocket server on the same port (real-time communication)
  * - SessionManager: session lifecycle management
  * - AgentManager: agent configuration, state, and dispatch
@@ -20,7 +20,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.voiceHandler = exports.modelRouter = exports.viadpEngine = exports.taskManager = exports.agentManager = exports.sessionManager = exports.gatewayServer = exports.io = exports.httpServer = exports.app = void 0;
+exports.sandboxManager = exports.toolRegistry = exports.workflowExecutor = exports.agentRunner = exports.voiceHandler = exports.modelRouter = exports.viadpEngine = exports.taskManager = exports.agentManager = exports.sessionManager = exports.gatewayServer = exports.io = exports.httpServer = exports.app = void 0;
 const http_1 = __importDefault(require("http"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -33,10 +33,24 @@ const viadp_engine_1 = require("./viadp-engine");
 const model_router_1 = require("./model-router");
 const voice_handler_1 = require("./voice-handler");
 const server_1 = require("./server");
+const agent_runner_1 = require("./agent-runner");
+const party_mode_1 = require("./party-mode");
+const openclaw_1 = require("./openclaw");
+const workflow_engine_1 = require("./workflow-engine");
+const path_1 = require("path");
+const memory_1 = require("@forge-team/memory");
+const pg_1 = require("pg");
+const ioredis_1 = __importDefault(require("ioredis"));
+const tools_1 = require("./tools");
+const code_executor_1 = require("./tools/code-executor");
+const terminal_tools_1 = require("./tools/terminal-tools");
+const git_tools_1 = require("./tools/git-tools");
+const ci_tools_1 = require("./tools/ci-tools");
+const browser_tools_1 = require("./tools/browser-tools");
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-const PORT = parseInt(process.env.GATEWAY_PORT ?? '3001', 10);
+const PORT = parseInt(process.env.GATEWAY_PORT ?? '18789', 10);
 const HOST = process.env.GATEWAY_HOST ?? '0.0.0.0';
 // ---------------------------------------------------------------------------
 // Initialize Managers
@@ -65,6 +79,92 @@ console.log('[Init] ModelRouter initialized');
 const voiceHandler = new voice_handler_1.VoiceHandler();
 exports.voiceHandler = voiceHandler;
 console.log('[Init] VoiceHandler initialized');
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam';
+const pool = new pg_1.Pool({ connectionString: DATABASE_URL });
+const redis = new ioredis_1.default(REDIS_URL);
+const memoryManager = new memory_1.MemoryManager(pool, redis);
+console.log('[Init] MemoryManager initialized');
+const geminiFileSearch = process.env.GOOGLE_AI_API_KEY
+    ? new memory_1.GeminiFileSearch({ apiKey: process.env.GOOGLE_AI_API_KEY })
+    : null;
+if (geminiFileSearch) {
+    console.log('[Init] GeminiFileSearch initialized');
+}
+let companyKBId = null;
+if (geminiFileSearch) {
+    initCompanyKB(geminiFileSearch).then(id => {
+        companyKBId = id;
+    }).catch(err => {
+        console.warn('[Gateway] Company KB init failed:', err?.message);
+    });
+}
+const vectorStore = new memory_1.VectorStore(pool, {
+    dimensions: 768,
+    apiKey: process.env.GOOGLE_AI_API_KEY,
+});
+console.log('[Init] VectorStore initialized');
+const summarizer = new memory_1.Summarizer(pool, redis, {
+    compactionThreshold: 50,
+    preserveRecentCount: 10,
+});
+console.log('[Init] Summarizer initialized');
+const toolRegistry = new tools_1.ToolRegistry();
+exports.toolRegistry = toolRegistry;
+const sandboxManager = new tools_1.SandboxManager();
+exports.sandboxManager = sandboxManager;
+(0, code_executor_1.registerCodeExecutorTool)(toolRegistry, sandboxManager);
+(0, terminal_tools_1.registerTerminalTool)(toolRegistry, sandboxManager);
+(0, git_tools_1.registerGitTools)(toolRegistry, sandboxManager);
+(0, ci_tools_1.registerCITools)(toolRegistry);
+(0, browser_tools_1.registerBrowserTools)(toolRegistry, sandboxManager);
+console.log(`[Init] ToolRegistry initialized with ${toolRegistry.listAll().length} tools`);
+const agentRunner = new agent_runner_1.AgentRunner({
+    modelRouter,
+    agentManager,
+    sessionManager,
+    memoryManager,
+    geminiFileSearch: geminiFileSearch ?? undefined,
+    vectorStore,
+    companyKBId: companyKBId ?? undefined,
+    toolRegistry,
+    sandboxManager,
+});
+exports.agentRunner = agentRunner;
+console.log('[Init] AgentRunner initialized');
+const messageBus = new openclaw_1.MessageBus({ redisUrl: REDIS_URL });
+const agentRegistry = new openclaw_1.OpenClawAgentRegistry(agentManager);
+const toolRunner = new openclaw_1.ToolRunner();
+console.log('[Init] OpenClaw components initialized (Redis:', REDIS_URL, ')');
+const workflowExecutor = new workflow_engine_1.WorkflowExecutor({
+    workflowsDir: (0, path_1.resolve)(__dirname, '../../workflows'),
+    agentManager,
+    modelRouter,
+    viadpEngine,
+    databaseUrl: process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam',
+});
+exports.workflowExecutor = workflowExecutor;
+console.log('[Init] WorkflowExecutor initialized');
+// ---------------------------------------------------------------------------
+// Company KB Auto-Provisioning
+// ---------------------------------------------------------------------------
+async function initCompanyKB(geminiFileSearch) {
+    try {
+        const stores = await geminiFileSearch.listStores();
+        const existing = stores.find(s => s.name === 'forgeteam-company-kb');
+        if (existing) {
+            console.log(`[Gateway] Found existing company KB: ${existing.id}`);
+            return existing.id;
+        }
+        const store = await geminiFileSearch.createStore('forgeteam-company-kb', 'company');
+        console.log(`[Gateway] Created company KB: ${store.id}`);
+        return store.id;
+    }
+    catch (err) {
+        console.warn(`[Gateway] Failed to initialize company KB:`, err?.message);
+        return null;
+    }
+}
 // ---------------------------------------------------------------------------
 // Express HTTP Server
 // ---------------------------------------------------------------------------
@@ -250,6 +350,10 @@ app.get('/api/viadp/delegations', (req, res) => {
     });
     res.json({ delegations, timestamp: new Date().toISOString() });
 });
+app.get('/api/viadp/trust', (_req, res) => {
+    const trustScores = viadpEngine.getGlobalTrustScores();
+    res.json({ trustScores, timestamp: new Date().toISOString() });
+});
 /**
  * VIADP trust scores endpoint.
  */
@@ -315,12 +419,167 @@ app.post('/api/voice/synthesize', async (req, res) => {
         res.status(500).json({ error: error?.message ?? 'Synthesis failed' });
     }
 });
+// -- OpenClaw REST endpoints --
+app.get('/api/openclaw/agents', (_req, res) => {
+    const agents = agentRegistry.getAllWithCapabilities();
+    res.json({ agents, timestamp: new Date().toISOString() });
+});
+app.get('/api/openclaw/tools', (_req, res) => {
+    const tools = toolRunner.listTools();
+    res.json({ tools, timestamp: new Date().toISOString() });
+});
+app.post('/api/openclaw/tools/:name/execute', express_1.default.json(), async (req, res) => {
+    try {
+        const result = await toolRunner.executeTool(req.params.name, req.body.input ?? {}, {
+            sessionId: req.body.sessionId,
+            agentId: req.body.agentId,
+        });
+        res.json(result);
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Tool execution failed' });
+    }
+});
+// ---------------------------------------------------------------------------
+// Workflow REST Endpoints
+// ---------------------------------------------------------------------------
+app.get('/api/workflows', (_req, res) => {
+    try {
+        const definitions = workflowExecutor.listDefinitions();
+        res.json({ workflows: definitions, timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to list workflows' });
+    }
+});
+app.post('/api/workflows/start', express_1.default.json(), async (req, res) => {
+    try {
+        const { definitionName, sessionId } = req.body;
+        if (!definitionName || !sessionId) {
+            res.status(400).json({ error: 'definitionName and sessionId are required' });
+            return;
+        }
+        const instance = await workflowExecutor.startWorkflow(definitionName, sessionId);
+        res.json({ instance, timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to start workflow' });
+    }
+});
+app.post('/api/workflows/:instanceId/pause', async (req, res) => {
+    try {
+        await workflowExecutor.pauseWorkflow(req.params.instanceId);
+        res.json({ status: 'paused', timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to pause workflow' });
+    }
+});
+app.post('/api/workflows/:instanceId/resume', express_1.default.json(), async (req, res) => {
+    try {
+        const { approvalData } = req.body;
+        await workflowExecutor.resumeWorkflow(req.params.instanceId, approvalData);
+        res.json({ status: 'resumed', timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to resume workflow' });
+    }
+});
+app.get('/api/workflows/:instanceId/progress', async (req, res) => {
+    try {
+        const progress = await workflowExecutor.getProgress(req.params.instanceId);
+        res.json({ progress, timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to get progress' });
+    }
+});
+app.post('/api/workflows/:instanceId/cancel', async (req, res) => {
+    try {
+        await workflowExecutor.cancelWorkflow(req.params.instanceId);
+        res.json({ status: 'cancelled', timestamp: new Date().toISOString() });
+    }
+    catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to cancel workflow' });
+    }
+});
 /**
  * Connection stats endpoint.
  */
 app.get('/api/connections', (_req, res) => {
     const stats = gatewayServer.getConnectionStats();
     res.json({ stats, timestamp: new Date().toISOString() });
+});
+app.get('/api/tools', (_req, res) => {
+    res.json({ tools: toolRegistry.listAll().map(t => ({ name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist })) });
+});
+app.get('/api/tools/:agentId', (req, res) => {
+    const agentId = req.params.agentId;
+    const tools = toolRegistry.listForAgent(agentId).map(t => ({ name: t.name, description: t.description, category: t.category }));
+    res.json({ agentId, tools });
+});
+app.get('/api/sandboxes', async (_req, res) => {
+    const sandboxes = await sandboxManager.listActive();
+    res.json({ sandboxes });
+});
+// -- Memory REST endpoints --
+app.get('/api/memory/search', async (req, res) => {
+    try {
+        const query = req.query.q ?? '';
+        const scope = req.query.scope;
+        const agentId = req.query.agentId;
+        const limit = parseInt(req.query.limit) || 20;
+        const results = await memoryManager.search(query, {
+            scope: scope,
+            agentId,
+            limit,
+        });
+        res.json({ results, total: results.length });
+    }
+    catch (err) {
+        res.status(500).json({ error: err?.message ?? 'Memory search failed' });
+    }
+});
+app.get('/api/memory/stats', async (req, res) => {
+    try {
+        const statsResult = await pool.query(`
+      SELECT
+        agent_id,
+        scope,
+        COUNT(*) as entry_count,
+        SUM(LENGTH(content)) as total_chars,
+        MAX(updated_at) as last_updated
+      FROM memory_entries
+      WHERE superseded_by IS NULL
+      GROUP BY agent_id, scope
+      ORDER BY agent_id, scope
+    `);
+        res.json({ stats: statsResult.rows });
+    }
+    catch (err) {
+        res.status(500).json({ error: err?.message ?? 'Memory stats failed' });
+    }
+});
+app.post('/api/memory/store', async (req, res) => {
+    try {
+        const { scope, content, metadata, agentId, projectId, teamId, threadId, tags, importance } = req.body;
+        if (!scope || !content) {
+            res.status(400).json({ error: 'scope and content are required' });
+            return;
+        }
+        const entry = await memoryManager.store(scope, content, metadata ?? {}, {
+            agentId,
+            projectId,
+            teamId,
+            threadId,
+            tags,
+            importance,
+        });
+        res.json({ entry });
+    }
+    catch (err) {
+        res.status(500).json({ error: err?.message ?? 'Memory store failed' });
+    }
 });
 /**
  * Seed / Demo endpoint.
@@ -533,6 +792,200 @@ app.post('/api/seed', (_req, res) => {
     }
 });
 // ---------------------------------------------------------------------------
+// Task Orchestration Endpoints
+// ---------------------------------------------------------------------------
+const TASK_KEYWORD_CAPABILITIES = {
+    'architecture|system design|scalability|api design|database schema': ['system-design', 'architecture-review'],
+    'frontend|ui|component|react|css|tailwind|responsive': ['frontend-development', 'component-building'],
+    'backend|api|endpoint|database|server|node|express|postgres': ['backend-development', 'api-design'],
+    'test|qa|quality|bug|regression|coverage': ['test-strategy', 'test-automation'],
+    'deploy|ci.cd|docker|kubernetes|infrastructure|monitoring': ['ci-cd', 'deployment'],
+    'security|auth|owasp|vulnerability|penetration|compliance': ['security-review', 'threat-modeling'],
+    'ux|user experience|wireframe|design|accessibility': ['ui-design', 'ux-research'],
+    'requirement|user story|feature|priority|backlog|prd': ['product-vision', 'backlog-management'],
+    'doc|readme|api doc|guide|knowledge base': ['technical-writing', 'api-documentation'],
+};
+function autoAssignAgent(taskTitle, taskDescription) {
+    const text = `${taskTitle} ${taskDescription}`.toLowerCase();
+    for (const [pattern, capabilities] of Object.entries(TASK_KEYWORD_CAPABILITIES)) {
+        const regex = new RegExp(pattern, 'i');
+        if (regex.test(text)) {
+            for (const cap of capabilities) {
+                const agent = agentManager.findAgentForCapability(cap);
+                if (agent)
+                    return agent;
+            }
+        }
+    }
+    // Fallback: assign to orchestrator instead of failing
+    return 'bmad-master';
+}
+app.post('/api/tasks/:taskId/start', async (req, res) => {
+    try {
+        const task = taskManager.getTask(req.params.taskId);
+        if (!task) {
+            res.status(404).json({ error: 'Task not found' });
+            return;
+        }
+        // Auto-assign agent if none assigned
+        let assignedAgent = task.assignedTo;
+        if (!assignedAgent) {
+            assignedAgent = autoAssignAgent(task.title, task.description);
+            if (assignedAgent) {
+                taskManager.assignTask(task.id, assignedAgent, 'system');
+                task.assignedTo = assignedAgent;
+            }
+        }
+        if (!assignedAgent) {
+            res.status(400).json({ error: 'No suitable agent found for this task' });
+            return;
+        }
+        // Move task through Kanban: backlog -> todo -> in-progress
+        if (task.status === 'backlog')
+            taskManager.moveTask(task.id, 'todo', 'system');
+        if (task.status === 'backlog' || task.status === 'todo')
+            taskManager.moveTask(task.id, 'in-progress', 'system');
+        agentManager.assignTask(assignedAgent, task.id, task.sessionId);
+        // Build task prompt
+        const taskPrompt = `You have been assigned the following task:\n\n` +
+            `TITLE: ${task.title}\n` +
+            `DESCRIPTION: ${task.description}\n` +
+            `PRIORITY: ${task.priority}\n` +
+            `COMPLEXITY: ${task.complexity}\n` +
+            `TAGS: ${task.tags.join(', ')}\n\n` +
+            `Please analyze this task and provide your implementation plan or deliverable.`;
+        const result = await agentRunner.processUserMessage(assignedAgent, taskPrompt, task.sessionId);
+        // Store the agent response on the task so it persists through API polling
+        taskManager.updateTask(task.id, {
+            metadata: { agentResponse: result.content, agentModel: result.model },
+        }, assignedAgent);
+        // Move to review
+        taskManager.moveTask(task.id, 'review', assignedAgent);
+        // Emit socket events for real-time dashboard updates
+        const agentConfig = agentManager.getConfig(assignedAgent);
+        const responseTimestamp = new Date().toISOString();
+        const responseMessage = {
+            id: `msg-${task.id}-response`,
+            from: assignedAgent,
+            to: 'user',
+            type: 'task.complete',
+            payload: { content: result.content },
+            sessionId: task.sessionId,
+            timestamp: responseTimestamp,
+        };
+        sessionManager.addMessage(task.sessionId, responseMessage);
+        io.emit('message', {
+            id: responseMessage.id,
+            from: agentConfig?.name ?? assignedAgent,
+            to: 'user',
+            type: 'task',
+            content: result.content,
+            taskId: task.id,
+            model: result.model,
+            sessionId: task.sessionId,
+            timestamp: responseTimestamp,
+        });
+        io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
+        res.json({
+            task: taskManager.getTask(task.id),
+            agentId: assignedAgent,
+            response: result.content,
+            model: result.model,
+            timestamp: new Date().toISOString(),
+        });
+    }
+    catch (error) {
+        console.error('[TaskStart] Error:', error);
+        res.status(500).json({ error: error?.message ?? 'Failed to start task' });
+    }
+});
+app.post('/api/tasks/:taskId/approve', (req, res) => {
+    const task = taskManager.getTask(req.params.taskId);
+    if (!task) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+    }
+    if (task.status !== 'review') {
+        res.status(400).json({ error: `Task is in "${task.status}" status, must be in "review" to approve` });
+        return;
+    }
+    taskManager.moveTask(task.id, 'done', 'user');
+    if (task.assignedTo) {
+        agentManager.completeTask(task.assignedTo, task.id);
+    }
+    io.emit('task_update', { type: 'completed', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'done' } });
+    res.json({
+        task: taskManager.getTask(task.id),
+        status: 'done',
+        timestamp: new Date().toISOString(),
+    });
+});
+app.post('/api/tasks/:taskId/reject', async (req, res) => {
+    try {
+        const task = taskManager.getTask(req.params.taskId);
+        if (!task) {
+            res.status(404).json({ error: 'Task not found' });
+            return;
+        }
+        if (task.status !== 'review') {
+            res.status(400).json({ error: `Task is in "${task.status}" status, must be in "review" to reject` });
+            return;
+        }
+        const feedback = req.body?.feedback ?? 'Please revise your work.';
+        // Move back to in-progress
+        taskManager.moveTask(task.id, 'in-progress', 'user');
+        io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'in-progress' } });
+        let response = null;
+        // If there's an assigned agent, send feedback and get revised response
+        if (task.assignedTo) {
+            const feedbackPrompt = `Your previous work on task "${task.title}" was rejected with the following feedback:\n\n` +
+                `${feedback}\n\n` +
+                `Original task description: ${task.description}\n\n` +
+                `Please revise your work based on the feedback.`;
+            const result = await agentRunner.processUserMessage(task.assignedTo, feedbackPrompt, task.sessionId);
+            response = result.content;
+            // Move back to review
+            taskManager.moveTask(task.id, 'review', task.assignedTo);
+            io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
+        }
+        res.json({
+            task: taskManager.getTask(task.id),
+            feedback,
+            response,
+            timestamp: new Date().toISOString(),
+        });
+    }
+    catch (error) {
+        console.error('[TaskReject] Error:', error);
+        res.status(500).json({ error: error?.message ?? 'Failed to process rejection' });
+    }
+});
+app.post('/api/tasks/:taskId/assign', (req, res) => {
+    const task = taskManager.getTask(req.params.taskId);
+    if (!task) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+    }
+    const agentId = req.body?.agentId;
+    if (!agentId) {
+        res.status(400).json({ error: 'agentId is required' });
+        return;
+    }
+    const agentConfig = agentManager.getConfig(agentId);
+    if (!agentConfig) {
+        res.status(404).json({ error: `Agent "${agentId}" not found` });
+        return;
+    }
+    taskManager.assignTask(task.id, agentId, 'user');
+    agentManager.assignTask(agentId, task.id, task.sessionId);
+    io.emit('task_update', { type: 'assigned', event: { taskId: task.id, sessionId: task.sessionId, assignedTo: agentId } });
+    res.json({
+        task: taskManager.getTask(task.id),
+        assignedTo: agentId,
+        timestamp: new Date().toISOString(),
+    });
+});
+// ---------------------------------------------------------------------------
 // Create HTTP + WebSocket Server
 // ---------------------------------------------------------------------------
 const httpServer = http_1.default.createServer(app);
@@ -544,6 +997,12 @@ const gatewayServer = new server_1.GatewayServer({
     viadpEngine,
     modelRouter,
     voiceHandler,
+    messageBus,
+    agentRegistry,
+    toolRunner,
+    workflowExecutor,
+    toolRegistry,
+    sandboxManager,
 });
 exports.gatewayServer = gatewayServer;
 gatewayServer.attach(httpServer);
@@ -573,11 +1032,12 @@ io.on('connection', (socket) => {
         const { payload, sessionId } = data;
         if (!payload?.content || !sessionId)
             return;
+        const isBroadcast = payload.to === 'broadcast';
         const message = {
             id: (0, uuid_1.v4)(),
             type: 'chat.message',
             from: 'user',
-            to: (payload.to === 'broadcast' ? 'bmad-master' : payload.to),
+            to: (isBroadcast ? 'bmad-master' : payload.to),
             payload: { content: payload.content },
             sessionId,
             timestamp: new Date().toISOString(),
@@ -588,6 +1048,133 @@ io.on('connection', (socket) => {
         // Broadcast to all dashboard connections
         io.emit('message', message);
         console.log(`[Chat] User -> ${payload.to}: "${payload.content.slice(0, 60)}..." (session=${sessionId})`);
+        if (isBroadcast) {
+            // --- Party Mode: select relevant agents and get in-character responses ---
+            const partyEngine = new party_mode_1.PartyModeEngine();
+            partyEngine
+                .executePartyMode(payload.content, sessionId, agentRunner, agentManager)
+                .then((partyResult) => {
+                // Emit agent selection event
+                io.emit('party_mode_selection', {
+                    sessionId,
+                    selections: partyResult.selections,
+                    correlationId: message.id,
+                });
+                // Emit each agent response as a separate message
+                for (const resp of partyResult.responses) {
+                    const responseMessage = {
+                        id: (0, uuid_1.v4)(),
+                        type: 'chat.response',
+                        from: resp.agentId,
+                        to: 'user',
+                        payload: {
+                            content: resp.content,
+                            data: {
+                                model: resp.model,
+                                inputTokens: resp.inputTokens,
+                                outputTokens: resp.outputTokens,
+                                partyMode: true,
+                            },
+                        },
+                        sessionId,
+                        timestamp: new Date().toISOString(),
+                        correlationId: message.id,
+                    };
+                    sessionManager.addMessage(sessionId, responseMessage);
+                    io.emit('message', responseMessage);
+                }
+                console.log(`[PartyMode] ${partyResult.responses.length} agents responded for broadcast`);
+            })
+                .catch((error) => {
+                console.error('[PartyMode] Failed, falling back to bmad-master:', error?.message);
+                // Fallback: single bmad-master response
+                agentManager.setAgentStatus('bmad-master', 'working');
+                agentRunner
+                    .processUserMessage('bmad-master', payload.content, sessionId)
+                    .then((result) => {
+                    const responseMessage = {
+                        id: (0, uuid_1.v4)(),
+                        type: 'chat.response',
+                        from: 'bmad-master',
+                        to: 'user',
+                        payload: {
+                            content: result.content,
+                            data: {
+                                model: result.model,
+                                inputTokens: result.inputTokens,
+                                outputTokens: result.outputTokens,
+                            },
+                        },
+                        sessionId,
+                        timestamp: new Date().toISOString(),
+                        correlationId: message.id,
+                    };
+                    sessionManager.addMessage(sessionId, responseMessage);
+                    io.emit('message', responseMessage);
+                    agentManager.setAgentStatus('bmad-master', 'idle');
+                })
+                    .catch((fallbackError) => {
+                    console.error('[PartyMode] Fallback also failed:', fallbackError?.message);
+                    agentManager.setAgentStatus('bmad-master', 'idle');
+                });
+            });
+        }
+        else {
+            // --- Direct message: single agent reply ---
+            const targetAgentId = payload.to;
+            const agentConfig = agentManager.getConfig(targetAgentId);
+            if (agentConfig) {
+                agentManager.setAgentStatus(targetAgentId, 'working');
+                agentRunner
+                    .processUserMessage(targetAgentId, payload.content, sessionId)
+                    .then((result) => {
+                    const responseMessage = {
+                        id: (0, uuid_1.v4)(),
+                        type: 'chat.response',
+                        from: targetAgentId,
+                        to: 'user',
+                        payload: {
+                            content: result.content,
+                            data: {
+                                model: result.model,
+                                inputTokens: result.inputTokens,
+                                outputTokens: result.outputTokens,
+                            },
+                        },
+                        sessionId,
+                        timestamp: new Date().toISOString(),
+                        correlationId: message.id,
+                    };
+                    sessionManager.addMessage(sessionId, responseMessage);
+                    io.emit('message', responseMessage);
+                    agentManager.setAgentStatus(targetAgentId, 'idle');
+                    console.log(`[Chat] ${targetAgentId} replied: ${result.content.length} chars ` +
+                        `(model=${result.model}, tokens=${result.inputTokens}/${result.outputTokens})`);
+                })
+                    .catch((error) => {
+                    console.error(`[Chat] Agent ${targetAgentId} reply failed:`, error);
+                    const errorMessage = {
+                        id: (0, uuid_1.v4)(),
+                        type: 'chat.response',
+                        from: targetAgentId,
+                        to: 'user',
+                        payload: {
+                            content: `I encountered an error while processing your message. Please try again.`,
+                            error: {
+                                code: 'AGENT_REPLY_FAILED',
+                                message: error?.message ?? 'Unknown error',
+                            },
+                        },
+                        sessionId,
+                        timestamp: new Date().toISOString(),
+                        correlationId: message.id,
+                    };
+                    sessionManager.addMessage(sessionId, errorMessage);
+                    io.emit('message', errorMessage);
+                    agentManager.setAgentStatus(targetAgentId, 'idle');
+                });
+            }
+        }
     });
     socket.on('disconnect', () => {
         console.log(`[Socket.IO] Dashboard disconnected: ${socket.id}`);
@@ -615,6 +1202,20 @@ agentManager.on('agent:task-completed', (agentId, taskId, sessionId) => {
         currentTask: null,
         sessionId,
     });
+});
+agentManager.on('agent:task-completed', async (agentId, taskId, sessionId) => {
+    if (!memoryManager || !summarizer)
+        return;
+    console.log(`[Gateway] Task ${taskId} completed by ${agentId} — triggering summarization`);
+    try {
+        const result = await summarizer.checkAndCompact(sessionId, memoryManager);
+        if (result.compacted) {
+            console.log(`[Gateway] Compacted session ${sessionId}: summary=${result.summaryId}`);
+        }
+    }
+    catch (err) {
+        console.warn(`[Gateway] Task-close summarization failed for ${sessionId}:`, err?.message);
+    }
 });
 agentManager.on('agent:task-failed', (agentId, taskId, sessionId, error) => {
     io.emit('agent_status', {
@@ -742,6 +1343,9 @@ const shutdown = (signal) => {
     gatewayServer.shutdown();
     sessionManager.shutdown();
     viadpEngine.shutdown();
+    sandboxManager.destroyAll().catch((err) => {
+        console.error('[Shutdown] Failed to destroy sandboxes:', err?.message);
+    });
     httpServer.close(() => {
         console.log('[Shutdown] HTTP server closed');
         process.exit(0);

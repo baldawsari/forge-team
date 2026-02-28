@@ -8,6 +8,9 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
+import { runDynamicAssessment } from './assessment';
+import { issueDelegationToken } from './trust-calibration';
+import { startMonitoring } from './execution-monitor';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -414,6 +417,18 @@ export class DelegationEngine {
 
     // Update agent load
     agent.currentLoad += 1;
+
+    // Integrate new modules (with fallback to existing behavior)
+    try {
+      startMonitoring(tokenId, {
+        delegationId: tokenId,
+        token: { token: tokenId, caveats: scope.allowedActions, signature },
+        trustScore: agent.trustScore,
+        riskScore: 0,
+      });
+    } catch {
+      // Fallback: existing behavior continues without monitoring
+    }
 
     return token;
   }

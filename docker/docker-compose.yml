@@ -23,6 +23,16 @@ services:
       - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
       - WHISPER_API_KEY=${WHISPER_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN:-}
+      - JIRA_BASE_URL=${JIRA_BASE_URL:-}
+      - JIRA_EMAIL=${JIRA_EMAIL:-}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      - VERCEL_TOKEN=${VERCEL_TOKEN:-}
+      - WHATSAPP_API_TOKEN=${WHATSAPP_API_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     networks:
       - forgeteam
@@ -143,3 +153,7 @@ networks:
   forgeteam:
     driver: bridge
     name: forgeteam-network
+  sandbox:
+    driver: bridge
+    name: forgeteam-sandbox
+    internal: true

@@ -34,6 +34,15 @@ import { OpenClawAgentRegistry, MessageBus, ToolRunner } from './openclaw';
 import { WorkflowExecutor } from './workflow-engine';
 import { resolve } from 'path';
 import type { AgentId, AgentMessage, CreateTaskInput } from '@forge-team/shared';
+import { MemoryManager, GeminiFileSearch, VectorStore, Summarizer } from '@forge-team/memory';
+import { Pool } from 'pg';
+import Redis from 'ioredis';
+import { ToolRegistry, SandboxManager } from './tools';
+import { registerCodeExecutorTool } from './tools/code-executor';
+import { registerTerminalTool } from './tools/terminal-tools';
+import { registerGitTools } from './tools/git-tools';
+import { registerCITools } from './tools/ci-tools';
+import { registerBrowserTools } from './tools/browser-tools';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -71,14 +80,63 @@ console.log('[Init] ModelRouter initialized');
 const voiceHandler = new VoiceHandler();
 console.log('[Init] VoiceHandler initialized');
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam';
+const pool = new Pool({ connectionString: DATABASE_URL });
+const redis = new Redis(REDIS_URL);
+
+const memoryManager = new MemoryManager(pool, redis);
+console.log('[Init] MemoryManager initialized');
+
+const geminiFileSearch = process.env.GOOGLE_AI_API_KEY
+  ? new GeminiFileSearch({ apiKey: process.env.GOOGLE_AI_API_KEY })
+  : null;
+if (geminiFileSearch) {
+  console.log('[Init] GeminiFileSearch initialized');
+}
+
+let companyKBId: string | null = null;
+if (geminiFileSearch) {
+  initCompanyKB(geminiFileSearch).then(id => {
+    companyKBId = id;
+  }).catch(err => {
+    console.warn('[Gateway] Company KB init failed:', err?.message);
+  });
+}
+
+const vectorStore = new VectorStore(pool, {
+  dimensions: 768,
+  apiKey: process.env.GOOGLE_AI_API_KEY,
+});
+console.log('[Init] VectorStore initialized');
+
+const summarizer = new Summarizer(pool, redis, {
+  compactionThreshold: 50,
+  preserveRecentCount: 10,
+});
+console.log('[Init] Summarizer initialized');
+
+const toolRegistry = new ToolRegistry();
+const sandboxManager = new SandboxManager();
+registerCodeExecutorTool(toolRegistry, sandboxManager);
+registerTerminalTool(toolRegistry, sandboxManager);
+registerGitTools(toolRegistry, sandboxManager);
+registerCITools(toolRegistry);
+registerBrowserTools(toolRegistry, sandboxManager);
+console.log(`[Init] ToolRegistry initialized with ${toolRegistry.listAll().length} tools`);
+
 const agentRunner = new AgentRunner({
   modelRouter,
   agentManager,
   sessionManager,
+  memoryManager,
+  geminiFileSearch: geminiFileSearch ?? undefined,
+  vectorStore,
+  companyKBId: companyKBId ?? undefined,
+  toolRegistry,
+  sandboxManager,
 });
 console.log('[Init] AgentRunner initialized');
-
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
 const messageBus = new MessageBus({ redisUrl: REDIS_URL });
 const agentRegistry = new OpenClawAgentRegistry(agentManager);
@@ -93,6 +151,28 @@ const workflowExecutor = new WorkflowExecutor({
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam',
 });
 console.log('[Init] WorkflowExecutor initialized');
+
+// ---------------------------------------------------------------------------
+// Company KB Auto-Provisioning
+// ---------------------------------------------------------------------------
+
+async function initCompanyKB(geminiFileSearch: GeminiFileSearch): Promise<string | null> {
+  try {
+    const stores = await geminiFileSearch.listStores();
+    const existing = stores.find(s => s.name === 'forgeteam-company-kb');
+    if (existing) {
+      console.log(`[Gateway] Found existing company KB: ${existing.id}`);
+      return existing.id;
+    }
+
+    const store = await geminiFileSearch.createStore('forgeteam-company-kb', 'company');
+    console.log(`[Gateway] Created company KB: ${store.id}`);
+    return store.id;
+  } catch (err: any) {
+    console.warn(`[Gateway] Failed to initialize company KB:`, err?.message);
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Express HTTP Server
@@ -299,7 +379,6 @@ app.get('/api/viadp/delegations', (req, res) => {
     status: req.query.status as any,
     from: req.query.from as any,
     to: req.query.to as any,
-    sessionId: req.query.sessionId as string,
   });
   res.json({ delegations, timestamp: new Date().toISOString() });
 });
@@ -471,6 +550,87 @@ app.post('/api/workflows/:instanceId/cancel', async (req, res) => {
 app.get('/api/connections', (_req, res) => {
   const stats = gatewayServer.getConnectionStats();
   res.json({ stats, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/tools', (_req, res) => {
+  res.json({ tools: toolRegistry.listAll().map(t => ({ name: t.name, description: t.description, category: t.category, agentWhitelist: t.agentWhitelist })) });
+});
+
+app.get('/api/tools/:agentId', (req, res) => {
+  const agentId = req.params.agentId as AgentId;
+  const tools = toolRegistry.listForAgent(agentId).map(t => ({ name: t.name, description: t.description, category: t.category }));
+  res.json({ agentId, tools });
+});
+
+app.get('/api/sandboxes', async (_req, res) => {
+  const sandboxes = await sandboxManager.listActive();
+  res.json({ sandboxes });
+});
+
+// -- Memory REST endpoints --
+
+app.get('/api/memory/search', async (req, res) => {
+  try {
+    const query = (req.query.q as string) ?? '';
+    const scope = req.query.scope as string | undefined;
+    const agentId = req.query.agentId as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    const results = await memoryManager.search(query, {
+      scope: scope as any,
+      agentId,
+      limit,
+    });
+
+    res.json({ results, total: results.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? 'Memory search failed' });
+  }
+});
+
+app.get('/api/memory/stats', async (req, res) => {
+  try {
+    const statsResult = await pool.query(`
+      SELECT
+        agent_id,
+        scope,
+        COUNT(*) as entry_count,
+        SUM(LENGTH(content)) as total_chars,
+        MAX(updated_at) as last_updated
+      FROM memory_entries
+      WHERE superseded_by IS NULL
+      GROUP BY agent_id, scope
+      ORDER BY agent_id, scope
+    `);
+
+    res.json({ stats: statsResult.rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? 'Memory stats failed' });
+  }
+});
+
+app.post('/api/memory/store', async (req, res) => {
+  try {
+    const { scope, content, metadata, agentId, projectId, teamId, threadId, tags, importance } = req.body;
+
+    if (!scope || !content) {
+      res.status(400).json({ error: 'scope and content are required' });
+      return;
+    }
+
+    const entry = await memoryManager.store(scope, content, metadata ?? {}, {
+      agentId,
+      projectId,
+      teamId,
+      threadId,
+      tags,
+      importance,
+    });
+
+    res.json({ entry });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? 'Memory store failed' });
+  }
 });
 
 /**
@@ -998,6 +1158,8 @@ const gatewayServer = new GatewayServer({
   agentRegistry,
   toolRunner,
   workflowExecutor,
+  toolRegistry,
+  sandboxManager,
 });
 
 gatewayServer.attach(httpServer);
@@ -1227,6 +1389,20 @@ agentManager.on('agent:task-completed', (agentId, taskId, sessionId) => {
   });
 });
 
+agentManager.on('agent:task-completed', async (agentId, taskId, sessionId) => {
+  if (!memoryManager || !summarizer) return;
+
+  console.log(`[Gateway] Task ${taskId} completed by ${agentId} — triggering summarization`);
+  try {
+    const result = await summarizer.checkAndCompact(sessionId, memoryManager);
+    if (result.compacted) {
+      console.log(`[Gateway] Compacted session ${sessionId}: summary=${result.summaryId}`);
+    }
+  } catch (err: any) {
+    console.warn(`[Gateway] Task-close summarization failed for ${sessionId}:`, err?.message);
+  }
+});
+
 agentManager.on('agent:task-failed', (agentId, taskId, sessionId, error) => {
   io.emit('agent_status', {
     agentId,
@@ -1386,6 +1562,9 @@ const shutdown = (signal: string) => {
   gatewayServer.shutdown();
   sessionManager.shutdown();
   viadpEngine.shutdown();
+  sandboxManager.destroyAll().catch((err: any) => {
+    console.error('[Shutdown] Failed to destroy sandboxes:', err?.message);
+  });
 
   httpServer.close(() => {
     console.log('[Shutdown] HTTP server closed');
@@ -1429,4 +1608,6 @@ export {
   voiceHandler,
   agentRunner,
   workflowExecutor,
+  toolRegistry,
+  sandboxManager,
 };

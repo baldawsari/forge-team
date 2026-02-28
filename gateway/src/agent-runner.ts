@@ -20,6 +20,12 @@ import type { AgentId, AgentMessage, ModelId } from '@forge-team/shared';
 import type { ModelRouter } from './model-router';
 import type { AgentManager } from './agent-manager';
 import type { SessionManager } from './session-manager';
+import type { MemoryManager } from '@forge-team/memory';
+import type { GeminiFileSearch } from '@forge-team/memory';
+import type { VectorStore } from '@forge-team/memory';
+import type { ToolRegistry } from './tools/tool-registry';
+import type { SandboxManager } from './tools/sandbox-manager';
+import type { ToolExecutionContext } from './tools/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,6 +36,8 @@ const MAX_HISTORY_MESSAGES = 20;
 
 /** Maximum output tokens per API call */
 const MAX_OUTPUT_TOKENS = 4096;
+
+const MAX_TOOL_USE_ROUNDS = 5;
 
 /**
  * Map internal model IDs to the actual API model identifiers.
@@ -69,6 +77,12 @@ interface AgentRunnerDeps {
   modelRouter: ModelRouter;
   agentManager: AgentManager;
   sessionManager: SessionManager;
+  memoryManager?: MemoryManager;
+  geminiFileSearch?: GeminiFileSearch;
+  vectorStore?: VectorStore;
+  companyKBId?: string;
+  toolRegistry?: ToolRegistry;
+  sandboxManager?: SandboxManager;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +93,12 @@ export class AgentRunner {
   private modelRouter: ModelRouter;
   private agentManager: AgentManager;
   private sessionManager: SessionManager;
+  private memoryManager: MemoryManager | null;
+  private geminiFileSearch: GeminiFileSearch | null;
+  private vectorStore: VectorStore | null;
+  private companyKBId: string | null;
+  private toolRegistry: ToolRegistry | null;
+  private sandboxManager: SandboxManager | null;
 
   /** Cache for loaded SOUL.md files — keyed by agentId */
   private soulCache: Map<AgentId, string> = new Map();
@@ -87,6 +107,12 @@ export class AgentRunner {
     this.modelRouter = deps.modelRouter;
     this.agentManager = deps.agentManager;
     this.sessionManager = deps.sessionManager;
+    this.memoryManager = deps.memoryManager ?? null;
+    this.geminiFileSearch = deps.geminiFileSearch ?? null;
+    this.vectorStore = deps.vectorStore ?? null;
+    this.companyKBId = deps.companyKBId ?? null;
+    this.toolRegistry = deps.toolRegistry ?? null;
+    this.sandboxManager = deps.sandboxManager ?? null;
   }
 
   // -------------------------------------------------------------------------
@@ -128,6 +154,12 @@ export class AgentRunner {
       );
     }
 
+    // 3. Retrieve memory context via RAG
+    const ragContext = await this.retrieveContext(agentId, userMessage, sessionId);
+    if (ragContext.length > 0) {
+      systemPrompt += '\n\n---\n\n' + ragContext;
+    }
+
     // 4. Get session message history and convert to chat format
     const history = this.getConversationHistory(agentId, sessionId);
 
@@ -151,14 +183,32 @@ export class AgentRunner {
       { role: 'user', content: userMessage },
     ];
 
-    // 7. Call the appropriate provider API
+    // 7. Determine tools for this agent
+    const agentTools = this.toolRegistry ? this.toolRegistry.listForAgent(agentId) : [];
+    const hasTools = agentTools.length > 0 && routingResult.model.supportsTools;
+
+    const toolContext: ToolExecutionContext = {
+      agentId,
+      sessionId,
+      taskId: null,
+      workingDir: '/workspace',
+      timeout: 300,
+    };
+
+    // 8. Call the appropriate provider API
     let result: { content: string; inputTokens: number; outputTokens: number };
 
     try {
       if (provider === 'anthropic') {
-        result = await this.callAnthropic(systemPrompt, messages, modelId);
+        const tools = hasTools && this.toolRegistry
+          ? this.toolRegistry.toAnthropicTools(agentId)
+          : undefined;
+        result = await this.callAnthropic(systemPrompt, messages, modelId, tools, toolContext);
       } else if (provider === 'google') {
-        result = await this.callGemini(systemPrompt, messages, modelId);
+        const tools = hasTools && this.toolRegistry
+          ? this.toolRegistry.toGeminiTools(agentId)
+          : undefined;
+        result = await this.callGemini(systemPrompt, messages, modelId, tools, toolContext);
       } else {
         throw new Error(`Unsupported provider: ${provider}`);
       }
@@ -182,6 +232,53 @@ export class AgentRunner {
       result.outputTokens,
       routingResult.classifiedTier,
     );
+
+    // 9. Store exchange in memory for future RAG retrieval
+    if (this.memoryManager) {
+      try {
+        await this.memoryManager.store('thread', userMessage, {
+          role: 'user',
+          agentId,
+          sessionId,
+        }, {
+          agentId,
+          threadId: sessionId,
+          importance: 0.5,
+        });
+
+        await this.memoryManager.store('thread', result.content, {
+          role: 'agent',
+          agentId,
+          model: modelId,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        }, {
+          agentId,
+          threadId: sessionId,
+          importance: 0.6,
+        });
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Failed to store memory for ${agentId}:`, err?.message);
+      }
+    }
+
+    // Also index in VectorStore for semantic search (TASK 10)
+    if (this.vectorStore) {
+      try {
+        await this.vectorStore.embedAndUpsert(
+          `[user] ${userMessage}\n[${agentId}] ${result.content}`,
+          {
+            agentId,
+            sessionId,
+            model: modelId,
+            timestamp: new Date().toISOString(),
+          },
+          agentId,
+        );
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Failed to index in VectorStore:`, err?.message);
+      }
+    }
 
     console.log(
       `[AgentRunner] ${agentId} response: ${result.content.length} chars, ` +
@@ -208,6 +305,8 @@ export class AgentRunner {
     systemPrompt: string,
     messages: ChatMessage[],
     modelId: string,
+    tools?: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
+    toolContext?: ToolExecutionContext,
   ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -221,29 +320,71 @@ export class AgentRunner {
     }
 
     const client = new Anthropic({ apiKey });
-
-    // Resolve to the actual API model identifier
     const apiModelId = ANTHROPIC_MODEL_MAP[modelId] ?? modelId;
 
-    const response = await client.messages.create({
-      model: apiModelId,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system: systemPrompt,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    });
+    let anthropicMessages: Array<{ role: 'user' | 'assistant'; content: any }> =
+      messages.map((m) => ({ role: m.role, content: m.content }));
 
-    // Extract text from the first content block
-    const textBlock = response.content[0];
-    const content =
-      textBlock?.type === 'text' ? textBlock.text : '[No text response]';
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let finalContent = '[No text response]';
+
+    for (let round = 0; round < MAX_TOOL_USE_ROUNDS; round++) {
+      const createParams: any = {
+        model: apiModelId,
+        max_tokens: MAX_OUTPUT_TOKENS,
+        system: systemPrompt,
+        messages: anthropicMessages,
+      };
+
+      if (tools && tools.length > 0) {
+        createParams.tools = tools;
+      }
+
+      const response = await client.messages.create(createParams);
+
+      totalInputTokens += response.usage.input_tokens;
+      totalOutputTokens += response.usage.output_tokens;
+
+      const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use');
+
+      if (toolUseBlock && toolUseBlock.type === 'tool_use' && this.toolRegistry && toolContext) {
+        const toolDef = this.toolRegistry.get(toolUseBlock.name);
+        let toolResultContent: string;
+
+        if (toolDef) {
+          try {
+            const toolResult = await toolDef.execute(toolUseBlock.input as Record<string, unknown>, toolContext);
+            toolResultContent = toolResult.success
+              ? toolResult.output
+              : `Error: ${toolResult.error ?? 'Tool execution failed'}`;
+          } catch (err: any) {
+            toolResultContent = `Error executing tool: ${err?.message ?? 'Unknown error'}`;
+          }
+        } else {
+          toolResultContent = `Unknown tool: ${toolUseBlock.name}`;
+        }
+
+        anthropicMessages = [
+          ...anthropicMessages,
+          { role: 'assistant', content: response.content },
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: toolResultContent }],
+          },
+        ];
+        continue;
+      }
+
+      const textBlock = response.content.find((b: any) => b.type === 'text');
+      finalContent = textBlock && textBlock.type === 'text' ? textBlock.text : '[No text response]';
+      break;
+    }
 
     return {
-      content,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
+      content: finalContent,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
     };
   }
 
@@ -259,6 +400,8 @@ export class AgentRunner {
     systemPrompt: string,
     messages: ChatMessage[],
     modelId: string,
+    tools?: Array<{ name: string; description: string; parameters: Record<string, unknown> }>,
+    toolContext?: ToolExecutionContext,
   ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
     const apiKey = process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) {
@@ -272,45 +415,80 @@ export class AgentRunner {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-
-    // Resolve to the actual API model identifier
     const apiModelId = GOOGLE_MODEL_MAP[modelId] ?? modelId;
 
-    const model = genAI.getGenerativeModel({
+    const modelConfig: any = {
       model: apiModelId,
       systemInstruction: systemPrompt,
-    });
+    };
 
-    // Separate the last user message from the history
+    if (tools && tools.length > 0) {
+      modelConfig.tools = [{
+        functionDeclarations: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        })),
+      }];
+    }
+
+    const model = genAI.getGenerativeModel(modelConfig);
+
     const lastMessage = messages[messages.length - 1];
     const historyMessages = messages.slice(0, -1);
 
-    // Convert history to Gemini format
     const geminiHistory = historyMessages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
     }));
 
-    // Start a multi-turn chat with the history
     const chat = model.startChat({
       history: geminiHistory.length > 0 ? geminiHistory : undefined,
     });
 
-    // Send the latest user message
-    const result = await chat.sendMessage(lastMessage.content);
-    const response = result.response;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let currentMessage: string | Array<{ functionResponse: { name: string; response: any } }> = lastMessage.content;
 
-    const content = response.text() || '[No text response]';
+    for (let round = 0; round < MAX_TOOL_USE_ROUNDS; round++) {
+      const result = await chat.sendMessage(currentMessage as any);
+      const response = result.response;
 
-    // Extract token usage from the response metadata
-    const usageMetadata = response.usageMetadata;
-    const inputTokens = usageMetadata?.promptTokenCount ?? 0;
-    const outputTokens = usageMetadata?.candidatesTokenCount ?? 0;
+      const usageMetadata = response.usageMetadata;
+      totalInputTokens += usageMetadata?.promptTokenCount ?? 0;
+      totalOutputTokens += usageMetadata?.candidatesTokenCount ?? 0;
+
+      const candidate = response.candidates?.[0];
+      const functionCallPart = candidate?.content?.parts?.find((p: any) => p.functionCall);
+
+      if (functionCallPart && 'functionCall' in functionCallPart && this.toolRegistry && toolContext) {
+        const fc = (functionCallPart as any).functionCall as { name: string; args: Record<string, unknown> };
+        const toolDef = this.toolRegistry.get(fc.name);
+        let functionResponse: any;
+
+        if (toolDef) {
+          try {
+            const toolResult = await toolDef.execute(fc.args as Record<string, unknown>, toolContext);
+            functionResponse = { result: toolResult.success ? toolResult.output : toolResult.error };
+          } catch (err: any) {
+            functionResponse = { error: err?.message ?? 'Tool execution failed' };
+          }
+        } else {
+          functionResponse = { error: `Unknown tool: ${fc.name}` };
+        }
+
+        currentMessage = [{ functionResponse: { name: fc.name, response: functionResponse } }];
+        continue;
+      }
+
+      const content = response.text() || '[No text response]';
+      return { content, inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+    }
 
     return {
-      content,
-      inputTokens,
-      outputTokens,
+      content: '[Max tool use rounds exceeded]',
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
     };
   }
 
@@ -386,6 +564,94 @@ export class AgentRunner {
     }
 
     return preamble;
+  }
+
+  private async retrieveContext(
+    agentId: AgentId,
+    userMessage: string,
+    sessionId: string,
+  ): Promise<string> {
+    const contextParts: string[] = [];
+
+    // 1. Get hierarchical memory context from MemoryManager
+    if (this.memoryManager) {
+      try {
+        const recentEntries = await this.memoryManager.getRecentContext(agentId, 15);
+        if (recentEntries.length > 0) {
+          const memoryText = recentEntries
+            .map(e => `[${e.scope}] ${e.content}`)
+            .join('\n');
+          contextParts.push(`## Relevant Memories\n${memoryText}`);
+        }
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Memory retrieval failed for ${agentId}:`, err?.message);
+      }
+    }
+
+    // 2. Search for project knowledge — Gemini File Search with pgvector fallback (TASK 8)
+    const agentConfig = this.agentManager.getConfig(agentId);
+    let storeId = (agentConfig as any)?.fileSearchStoreId as string | undefined;
+
+    // Auto-create per-agent corpus on first use (TASK 7)
+    if (!storeId && this.geminiFileSearch) {
+      try {
+        const store = await this.geminiFileSearch.createStore(
+          `agent-${agentId}`,
+          'agent',
+        );
+        (agentConfig as any).fileSearchStoreId = store.id;
+        storeId = store.id;
+        console.log(`[AgentRunner] Created file search store for ${agentId}: ${store.id}`);
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Failed to create store for ${agentId}:`, err?.message);
+      }
+    }
+
+    let fileSearchResults: string[] = [];
+
+    if (this.geminiFileSearch && storeId) {
+      try {
+        const searchResult = await this.geminiFileSearch.search(storeId, userMessage, 3);
+        fileSearchResults = searchResult.results.map(r => r.content);
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Gemini File Search failed, falling back to pgvector:`, err?.message);
+        if (this.vectorStore) {
+          try {
+            const vectorResults = await this.vectorStore.similaritySearch(userMessage, 3, {
+              namespace: agentId,
+              minScore: 0.3,
+            });
+            fileSearchResults = vectorResults.map(r => r.entry.content);
+          } catch (vecErr: any) {
+            console.warn(`[AgentRunner] pgvector fallback also failed:`, vecErr?.message);
+          }
+        }
+      }
+    } else if (!storeId && this.companyKBId && this.geminiFileSearch) {
+      // Fall back to company-wide KB
+      try {
+        const searchResult = await this.geminiFileSearch.search(this.companyKBId, userMessage, 3);
+        fileSearchResults = searchResult.results.map(r => r.content);
+      } catch (err: any) {
+        console.warn(`[AgentRunner] Company KB search failed:`, err?.message);
+      }
+    } else if (this.vectorStore) {
+      try {
+        const vectorResults = await this.vectorStore.similaritySearch(userMessage, 3, {
+          namespace: agentId,
+          minScore: 0.3,
+        });
+        fileSearchResults = vectorResults.map(r => r.entry.content);
+      } catch (err: any) {
+        console.warn(`[AgentRunner] pgvector search failed:`, err?.message);
+      }
+    }
+
+    if (fileSearchResults.length > 0) {
+      contextParts.push(`## Project Knowledge Base\n${fileSearchResults.join('\n---\n')}`);
+    }
+
+    return contextParts.join('\n\n');
   }
 
   // -------------------------------------------------------------------------

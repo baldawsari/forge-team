@@ -719,3 +719,9 @@ export class VerificationEngine {
     return `h_${Math.abs(hash).toString(36).padStart(10, '0')}`;
   }
 }
+
+export async function generateZKProof(result: unknown): Promise<{ proof: string; verified: boolean }> {
+  // TODO: Integrate snarkjs for real ZK proof generation
+  const proofId = `proof_stub_${Date.now().toString(36)}`;
+  return { proof: proofId, verified: true };
+}

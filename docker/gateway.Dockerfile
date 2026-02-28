@@ -36,6 +36,9 @@ RUN npm install -g tsx
 WORKDIR /app/gateway
 RUN npx tsc --noEmit || true
 
+# Install Playwright browsers for QA agent browser testing
+RUN npx playwright install --with-deps chromium
+
 # Stage 3: Production image
 FROM node:20-alpine AS runner
 WORKDIR /app

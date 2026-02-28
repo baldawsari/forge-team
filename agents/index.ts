@@ -34,6 +34,7 @@ export interface AgentConfig {
   approvalRequired: boolean;
   memoryScope: "private" | "team" | "project";
   viadpRole: "delegator" | "delegatee" | "both";
+  fileSearchStoreId?: string;
 }
 
 // ---------------------------------------------------------------------------
