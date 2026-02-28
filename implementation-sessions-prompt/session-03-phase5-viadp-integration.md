@@ -550,20 +550,20 @@ Independent: WS5, WS6 (can start immediately)
 
 After all workstreams complete, verify:
 
-- [ ] `npx tsc --noEmit` succeeds in `/forge-team/viadp/` with zero errors
-- [ ] `npx tsc --noEmit` succeeds in `/forge-team/gateway/` with zero errors
-- [ ] `grep -r "import.*from.*@forge-team/viadp" forge-team/gateway/src/viadp-engine.ts` returns results (gateway uses the package)
-- [ ] `wc -l forge-team/gateway/src/viadp-engine.ts` returns < 250 lines (thin wrapper, not 827)
-- [ ] `viadp/types.ts` exists with DelegationRequest, Bid, DelegationToken, VIADPContext
-- [ ] `viadp/src/assessment.ts` exists with `runDynamicAssessment()`
-- [ ] `viadp/src/execution-monitor.ts` exists with `startMonitoring()`
-- [ ] `viadp/src/trust-calibration.ts` exists with `issueDelegationToken()` and `updateTrustBayesian()`
-- [ ] `viadp/src/resilience.ts` has `applyEconomicSelfRegulation()` (economic throttle function)
-- [ ] `viadp/src/verification.ts` has `generateZKProof()` stub
-- [ ] `gateway/src/langgraph-nodes/viadp-delegation-node.ts` exists
-- [ ] `workflow-engine.ts` WorkflowExecutor constructor accepts optional VIADPEngine
-- [ ] `init.sql` has `viadp_reputation` table with 12 agent seeds
-- [ ] `init.sql` has INSERT-only rules on `viadp_audit_log`
-- [ ] `ViadpAuditLog.tsx` subscribes to `viadp_update` WebSocket event
-- [ ] No duplicate VIADP logic remains in gateway — all core logic is in `@forge-team/viadp`
-- [ ] Circuit breakers, parallel bids, diversity scoring are now LIVE code (used by gateway), not dead code
+- [x] `npx tsc --noEmit` succeeds in `/forge-team/viadp/` with zero errors
+- [x] `npx tsc --noEmit` succeeds in `/forge-team/gateway/` with zero errors
+- [x] `grep -r "import.*from.*@forge-team/viadp" forge-team/gateway/src/viadp-engine.ts` returns results (gateway uses the package)
+- [x] `wc -l forge-team/gateway/src/viadp-engine.ts` returns < 250 lines (thin wrapper, not 827)
+- [x] `viadp/types.ts` exists with DelegationRequest, Bid, DelegationToken, VIADPContext
+- [x] `viadp/src/assessment.ts` exists with `runDynamicAssessment()`
+- [x] `viadp/src/execution-monitor.ts` exists with `startMonitoring()`
+- [x] `viadp/src/trust-calibration.ts` exists with `issueDelegationToken()` and `updateTrustBayesian()`
+- [x] `viadp/src/resilience.ts` has `applyEconomicSelfRegulation()` (economic throttle function)
+- [x] `viadp/src/verification.ts` has `generateZKProof()` stub
+- [x] `gateway/src/langgraph-nodes/viadp-delegation-node.ts` exists
+- [x] `workflow-engine.ts` WorkflowExecutor constructor accepts optional VIADPEngine
+- [x] `init.sql` has `viadp_reputation` table with 12 agent seeds
+- [x] `init.sql` has INSERT-only rules on `viadp_audit_log`
+- [x] `ViadpAuditLog.tsx` subscribes to `viadp_update` WebSocket event
+- [x] No duplicate VIADP logic remains in gateway — all core logic is in `@forge-team/viadp`
+- [x] Circuit breakers, parallel bids, diversity scoring are now LIVE code (used by gateway), not dead code
