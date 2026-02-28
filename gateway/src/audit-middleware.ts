@@ -64,16 +64,24 @@ export class AuditMiddleware {
     this.entries.push(entry);
     this.lastHash = hash;
 
-    // Fire-and-forget DB persistence
-    import('./db.js').then(({ query }) => {
-      query(
-        `INSERT INTO audit_log (id, sequence_number, hash, previous_hash, client_id, client_type, message_type, direction, session_id, agent_id, timestamp)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [entry.id, entry.sequenceNumber, entry.hash, entry.previousHash, entry.clientId, entry.clientType, entry.messageType, entry.direction, entry.sessionId, entry.agentId, entry.timestamp]
-      ).catch((err: any) => {
-        console.warn('[AuditMiddleware] Failed to persist audit entry:', err?.message);
-      });
-    }).catch(() => {});
+    // Persist to DB with retry
+    const persistEntry = async (retries = 2) => {
+      try {
+        const { query } = await import('./db.js');
+        await query(
+          `INSERT INTO audit_log (id, sequence_number, hash, previous_hash, client_id, client_type, message_type, direction, session_id, agent_id, timestamp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [entry.id, entry.sequenceNumber, entry.hash, entry.previousHash, entry.clientId, entry.clientType, entry.messageType, entry.direction, entry.sessionId, entry.agentId, entry.timestamp]
+        );
+      } catch (err: any) {
+        if (retries > 0) {
+          setTimeout(() => persistEntry(retries - 1), 1000);
+        } else {
+          console.error('[AuditMiddleware] Failed to persist audit entry after retries:', err?.message);
+        }
+      }
+    };
+    persistEntry();
   }
 
   getEntries(filters?: AuditFilters): AuditEntry[] {

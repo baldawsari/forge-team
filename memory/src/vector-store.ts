@@ -53,6 +53,7 @@ export class VectorStore {
   private distanceMetric: 'cosine' | 'l2' | 'inner_product';
   private genAI: GoogleGenerativeAI | null;
   private embeddingModel: string;
+  private hashEmbeddingWarningLogged = false;
 
   constructor(pool: Pool, config: VectorStoreConfig = {}) {
     this.pool = pool;
@@ -113,6 +114,14 @@ export class VectorStore {
 
   async embed(text: string): Promise<number[]> {
     if (!this.genAI) {
+      if (!this.hashEmbeddingWarningLogged) {
+        console.warn(
+          '[VectorStore] WARNING: Using hash embeddings (no GOOGLE_AI_API_KEY). ' +
+          'Similarity search results will be low quality. ' +
+          'Set GOOGLE_AI_API_KEY for real embeddings.'
+        );
+        this.hashEmbeddingWarningLogged = true;
+      }
       return this.hashEmbed(text);
     }
 
@@ -212,6 +221,9 @@ export class VectorStore {
     topK: number = 10,
     filters: VectorSearchFilters = {},
   ): Promise<SimilarityResult[]> {
+    if (!this.genAI) {
+      console.warn('[VectorStore] Similarity search using hash embeddings — results may be unreliable');
+    }
     const queryEmbedding = await this.embed(query);
     return this.similaritySearchByVector(queryEmbedding, topK, filters);
   }

@@ -88,6 +88,7 @@ export class MemoryManager {
     metadata: Record<string, unknown> = {},
     options: StoreOptions = {},
   ): Promise<MemoryEntry> {
+    scope = this.normalizeScope(scope);
     const id = uuidv4();
     const now = new Date();
     const tags = options.tags ?? [];
@@ -156,6 +157,9 @@ export class MemoryManager {
     query: string,
     filters: SearchFilters = {},
   ): Promise<MemoryEntry[]> {
+    if (filters.scope) {
+      filters = { ...filters, scope: this.normalizeScope(filters.scope) };
+    }
     const cacheKey = this.buildCacheKey('search', { query, ...filters });
     const cached = await this.redis.get(cacheKey);
     if (cached) {
@@ -575,5 +579,15 @@ export class MemoryManager {
         [ids],
       )
       .catch(() => {});
+  }
+
+  private normalizeScope(scope: MemoryScope | string): MemoryScope {
+    const aliases: Record<string, MemoryScope> = {
+      'global': 'company',
+      'session': 'thread',
+      'phase': 'project',
+      'task': 'agent',
+    };
+    return (aliases[scope] ?? scope) as MemoryScope;
   }
 }

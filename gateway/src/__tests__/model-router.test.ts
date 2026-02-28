@@ -176,4 +176,62 @@ describe('ModelRouter', () => {
       expect(assignment.fallback).toBe('claude-sonnet-4-6');
     });
   });
+
+  describe('cost enforcement', () => {
+    it('should downgrade model at 100% cap', () => {
+      // Architect has $50 daily cap. Record $55 worth (110%).
+      // claude-opus-4-6 output: $75 per 1M tokens. $55 = 733_334 tokens.
+      router.setCostCap('architect', { dailyCapUsd: 50, weeklyCapUsd: 250, alertThreshold: 0.8 });
+      router.recordCost('architect', 'session-1', 'task-1', 'claude-opus-4-6', 0, 733_334, 'premium');
+
+      const result = router.route({
+        agentId: 'architect',
+        taskContent: 'Design the system',
+        sessionId: 'test-session',
+      });
+
+      // Architect's primary is claude-opus-4-6 -> should downgrade to claude-sonnet-4-6
+      expect(result.model).not.toBeNull();
+      expect(result.model.id).toBe('claude-sonnet-4-6');
+    });
+
+    it('should hard block at 120% cap', () => {
+      // Architect has $50 daily cap. Record $65 worth (130%).
+      // claude-opus-4-6 output: $75 per 1M tokens. $65 = 866_667 tokens.
+      router.setCostCap('architect', { dailyCapUsd: 50, weeklyCapUsd: 250, alertThreshold: 0.8 });
+      router.recordCost('architect', 'session-1', 'task-1', 'claude-opus-4-6', 0, 866_667, 'premium');
+
+      const result = router.route({
+        agentId: 'architect',
+        taskContent: 'Design the system',
+        sessionId: 'test-session',
+      });
+
+      expect(result.model).toBeNull();
+      expect(result.reason).toBe('hard-cap-blocked');
+    });
+
+    it('should return correct severity in checkCostCap', () => {
+      router.setCostCap('architect', { dailyCapUsd: 50, weeklyCapUsd: 250, alertThreshold: 0.8 });
+
+      // No cost -> severity ok
+      let status = router.checkCostCap('architect');
+      expect(status.severity).toBe('ok');
+
+      // ~85% of $50 = $42.50. $42.50 / $75 * 1M = 566_667 output tokens
+      router.recordCost('architect', 'session-1', 'task-1', 'claude-opus-4-6', 0, 566_667, 'premium');
+      status = router.checkCostCap('architect');
+      expect(status.severity).toBe('warning');
+
+      // Bring total to ~110% of $50 = $55. Need additional $12.50 = 166_667 output tokens
+      router.recordCost('architect', 'session-1', 'task-2', 'claude-opus-4-6', 0, 166_667, 'premium');
+      status = router.checkCostCap('architect');
+      expect(status.severity).toBe('downgrade');
+
+      // Bring total to ~125% of $50 = $62.50. Need additional $7.50 = 100_000 output tokens
+      router.recordCost('architect', 'session-1', 'task-3', 'claude-opus-4-6', 0, 100_000, 'premium');
+      status = router.checkCostCap('architect');
+      expect(status.severity).toBe('blocked');
+    });
+  });
 });

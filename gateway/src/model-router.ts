@@ -35,6 +35,7 @@ interface CostCap {
 
 interface CostCapStatus {
   allowed: boolean;
+  severity: 'ok' | 'warning' | 'downgrade' | 'blocked';
   dailyUsed: number;
   dailyCap: number;
   weeklyUsed: number;
@@ -330,22 +331,26 @@ export class ModelRouter extends EventEmitter {
    * 5. Global fallback chain: premium -> balanced -> fast
    */
   route(request: ModelRoutingRequest): ModelRoutingResult {
-    const assignment = this.assignments[request.agentId];
+    let assignment = this.assignments[request.agentId];
     if (!assignment) {
       throw new Error(`No model assignment found for agent: ${request.agentId}`);
     }
 
     const capStatus = this.checkCostCap(request.agentId);
-    if (!capStatus.allowed) {
-      const cheapest = Object.values(MODEL_CATALOG).sort((a, b) => a.inputCostPer1M - b.inputCostPer1M)[0];
+    if (capStatus.severity === 'blocked') {
       return {
-        model: cheapest,
-        reason: 'cost-cap-exceeded' as any,
-        estimatedCost: this.estimateCost(cheapest),
+        model: null,
+        reason: 'hard-cap-blocked',
+        estimatedCost: 0,
         classifiedTier: 'fast',
         alertTriggered: true,
         capStatus,
       } as any;
+    }
+
+    if (capStatus.severity === 'downgrade') {
+      const downgraded = this.getDowngradeModel(assignment.primary);
+      assignment = { ...assignment, primary: downgraded };
     }
 
     const classifiedTier = request.tierOverride ?? this.classifyComplexity(request.taskContent);
@@ -596,16 +601,30 @@ export class ModelRouter extends EventEmitter {
   checkCostCap(agentId: string): CostCapStatus {
     const cap = this.costCaps.get(agentId);
     if (!cap) {
-      return { allowed: true, dailyUsed: 0, dailyCap: 50, weeklyUsed: 0, weeklyCap: 200, alertTriggered: false };
+      return { allowed: true, severity: 'ok', dailyUsed: 0, dailyCap: 50, weeklyUsed: 0, weeklyCap: 200, alertTriggered: false };
     }
     const dailyUsed = this.getAgentDailyCost(agentId);
     const weeklyUsed = this.getAgentWeeklyCost(agentId);
     const dailyRatio = dailyUsed / cap.dailyCapUsd;
     const weeklyRatio = weeklyUsed / cap.weeklyCapUsd;
-    const allowed = dailyUsed < cap.dailyCapUsd && weeklyUsed < cap.weeklyCapUsd;
-    const alertTriggered = dailyRatio >= cap.alertThreshold || weeklyRatio >= cap.alertThreshold;
+    const ratio = Math.max(dailyRatio, weeklyRatio);
+    const alertTriggered = ratio >= cap.alertThreshold;
+
+    let severity: CostCapStatus['severity'];
+    if (ratio >= 1.2) {
+      severity = 'blocked';
+    } else if (ratio >= 1.0) {
+      severity = 'downgrade';
+    } else if (ratio >= cap.alertThreshold) {
+      severity = 'warning';
+    } else {
+      severity = 'ok';
+    }
+
+    const allowed = severity !== 'blocked';
     return {
       allowed,
+      severity,
       dailyUsed,
       dailyCap: cap.dailyCapUsd,
       weeklyUsed,
@@ -645,6 +664,15 @@ export class ModelRouter extends EventEmitter {
     } catch (err: any) {
       console.warn('[ModelRouter] Failed to load recent costs from DB:', err?.message);
     }
+  }
+
+  private getDowngradeModel(currentModelId: ModelId): ModelId {
+    const downgradeChain: Partial<Record<ModelId, ModelId>> = {
+      'claude-opus-4-6': 'claude-sonnet-4-6',
+      'claude-sonnet-4-6': 'claude-haiku-4-5',
+      'gemini-3.1-pro': 'gemini-flash-3',
+    };
+    return downgradeChain[currentModelId] ?? currentModelId;
   }
 
   private estimateCost(model: ModelConfig): number {

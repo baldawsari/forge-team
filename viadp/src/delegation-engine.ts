@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { runDynamicAssessment } from './assessment';
 import { issueDelegationToken } from './trust-calibration';
-import { startMonitoring } from './execution-monitor';
+import { startMonitoring, recordMetric } from './execution-monitor';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,6 +118,38 @@ export interface AgentProfile {
   status: 'idle' | 'working' | 'reviewing' | 'blocked' | 'offline' | 'error';
 }
 
+export interface RFQ {
+  id: string;
+  taskId: string;
+  delegator: string;
+  capabilityRequirements: string[];
+  riskLevel: RiskLevel;
+  deadline: Date;
+  maxCost?: number;
+  description: string;
+  createdAt: Date;
+  status: 'open' | 'evaluating' | 'awarded' | 'cancelled';
+  bids: RFQBid[];
+}
+
+export interface RFQBid {
+  id: string;
+  rfqId: string;
+  agentId: string;
+  proposedCost: number;
+  estimatedDuration: number;
+  confidence: number;
+  approach: string;
+  submittedAt: Date;
+}
+
+export interface RFQResult {
+  rfqId: string;
+  winner: string | null;
+  bids: Array<RFQBid & { compositeScore: number; reasoning: string }>;
+  awardedAt: Date | null;
+}
+
 // ---------------------------------------------------------------------------
 // Validation schemas
 // ---------------------------------------------------------------------------
@@ -146,6 +178,7 @@ export class DelegationEngine {
   private activeDelegations: Map<string, DelegationToken> = new Map();
   private executionStatuses: Map<string, ExecutionStatus> = new Map();
   private statusListeners: Map<string, Array<(status: ExecutionStatus) => void>> = new Map();
+  private activeRFQs: Map<string, RFQ> = new Map();
 
   /**
    * Register an agent profile for capability matching.
@@ -426,6 +459,13 @@ export class DelegationEngine {
         trustScore: agent.trustScore,
         riskScore: 0,
       });
+      recordMetric({
+        delegationId: tokenId,
+        agentId: selectedAgentId,
+        metric: 'progress_rate',
+        value: 0,
+        timestamp: new Date(),
+      });
     } catch {
       // Fallback: existing behavior continues without monitoring
     }
@@ -657,6 +697,151 @@ export class DelegationEngine {
     return Array.from(this.activeDelegations.values()).filter(
       (t) => !t.revoked,
     );
+  }
+
+  /**
+   * Create an open RFQ that agents can bid on.
+   */
+  createRFQ(request: DelegationRequest, description: string): RFQ {
+    const rfq: RFQ = {
+      id: uuidv4(),
+      taskId: request.taskId,
+      delegator: request.delegator,
+      capabilityRequirements: request.capabilityRequirements,
+      riskLevel: request.riskLevel,
+      deadline: request.deadline,
+      maxCost: request.maxCost,
+      description,
+      createdAt: new Date(),
+      status: 'open',
+      bids: [],
+    };
+    this.activeRFQs.set(rfq.id, rfq);
+    return rfq;
+  }
+
+  /**
+   * Submit a bid to an open RFQ.
+   */
+  submitBid(rfqId: string, bid: Omit<RFQBid, 'id' | 'rfqId' | 'submittedAt'>): RFQBid {
+    const rfq = this.activeRFQs.get(rfqId);
+    if (!rfq) throw new Error(`RFQ ${rfqId} not found`);
+    if (rfq.status !== 'open') throw new Error(`RFQ ${rfqId} is not open for bids`);
+
+    const agent = this.agents.get(bid.agentId);
+    if (!agent) throw new Error(`Agent ${bid.agentId} not found`);
+    if (agent.status === 'offline' || agent.status === 'error') {
+      throw new Error(`Agent ${bid.agentId} is not available`);
+    }
+
+    if (rfq.maxCost && bid.proposedCost > rfq.maxCost) {
+      throw new Error(`Bid cost $${bid.proposedCost} exceeds RFQ max $${rfq.maxCost}`);
+    }
+
+    const fullBid: RFQBid = {
+      id: uuidv4(),
+      rfqId,
+      ...bid,
+      submittedAt: new Date(),
+    };
+    rfq.bids.push(fullBid);
+    return fullBid;
+  }
+
+  /**
+   * Evaluate an RFQ: score all bids and select a winner.
+   */
+  evaluateRFQ(rfqId: string): RFQResult {
+    const rfq = this.activeRFQs.get(rfqId);
+    if (!rfq) throw new Error(`RFQ ${rfqId} not found`);
+
+    rfq.status = 'evaluating';
+
+    if (rfq.bids.length === 0) {
+      rfq.status = 'cancelled';
+      return { rfqId, winner: null, bids: [], awardedAt: null };
+    }
+
+    const scoredBids = rfq.bids.map((bid) => {
+      const capability = this.assessCapability(bid.agentId, rfq.capabilityRequirements);
+      const agent = this.agents.get(bid.agentId)!;
+
+      const maxCost = rfq.maxCost ?? Math.max(...rfq.bids.map(b => b.proposedCost));
+      const costScore = 1 - (bid.proposedCost / (maxCost || 1));
+
+      const maxDuration = Math.max(...rfq.bids.map(b => b.estimatedDuration));
+      const timeScore = 1 - (bid.estimatedDuration / (maxDuration || 1));
+
+      const confidenceScore = bid.confidence;
+      const trustScore = agent.trustScore;
+
+      const weights = this.getWeights(rfq.riskLevel);
+      const compositeScore =
+        capability.overallScore * weights.capability +
+        costScore * weights.cost +
+        ((trustScore * 0.5 + confidenceScore * 0.5) / this.riskMultiplier(rfq.riskLevel)) * weights.risk +
+        timeScore * weights.diversity;
+
+      const reasoning = [
+        `Capability: ${(capability.overallScore * 100).toFixed(0)}%`,
+        `Bid: $${bid.proposedCost.toFixed(2)} / ${bid.estimatedDuration}min`,
+        `Confidence: ${(bid.confidence * 100).toFixed(0)}%`,
+        `Trust: ${trustScore.toFixed(2)}`,
+      ].join(' | ');
+
+      return { ...bid, compositeScore, reasoning };
+    });
+
+    scoredBids.sort((a, b) => b.compositeScore - a.compositeScore);
+
+    const winner = scoredBids[0]?.agentId ?? null;
+    rfq.status = winner ? 'awarded' : 'cancelled';
+
+    return {
+      rfqId,
+      winner,
+      bids: scoredBids,
+      awardedAt: winner ? new Date() : null,
+    };
+  }
+
+  /**
+   * Full RFQ lifecycle: create -> bid -> evaluate -> delegate.
+   */
+  delegateWithRFQ(
+    request: DelegationRequest,
+    description: string,
+    autoCollectBids: boolean = true,
+  ): { rfqResult: RFQResult; token: DelegationToken | null } {
+    const rfq = this.createRFQ(request, description);
+
+    if (autoCollectBids) {
+      for (const [, profile] of this.agents) {
+        if (profile.id === request.delegator) continue;
+        if (profile.status === 'offline' || profile.status === 'error') continue;
+        if (profile.currentLoad >= profile.maxConcurrentTasks) continue;
+
+        const capability = this.assessCapability(profile.id, request.capabilityRequirements);
+        if (capability.overallScore < 0.1) continue;
+
+        this.submitBid(rfq.id, {
+          agentId: profile.id,
+          proposedCost: profile.costPerToken * (request.maxCost ?? 1000) * (1 - capability.overallScore * 0.3),
+          estimatedDuration: Math.round(30 / (capability.overallScore || 0.1)),
+          confidence: capability.confidence,
+          approach: `${capability.matchedCapabilities.join(', ')} — ${profile.modelFamily}`,
+        });
+      }
+    }
+
+    const rfqResult = this.evaluateRFQ(rfq.id);
+
+    let token: DelegationToken | null = null;
+    if (rfqResult.winner) {
+      token = this.delegate(request, rfqResult.winner);
+    }
+
+    return { rfqResult, token };
   }
 
   // ---------------------------------------------------------------------------

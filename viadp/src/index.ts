@@ -17,6 +17,9 @@ export {
   type VerificationPolicy,
   type AgentProfile,
   type RiskLevel,
+  type RFQ,
+  type RFQBid,
+  type RFQResult,
 } from './delegation-engine';
 
 export {
@@ -71,7 +74,11 @@ export {
   startMonitoring,
   stopMonitoring,
   checkAgentHealth,
+  recordMetric,
+  detectAnomaly,
   type MonitoringContext,
+  type MetricSample,
+  type AnomalyResult,
 } from './execution-monitor';
 
 export {

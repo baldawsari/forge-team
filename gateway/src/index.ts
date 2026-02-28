@@ -1258,6 +1258,14 @@ app.post('/api/tasks/:taskId/approve', (req, res) => {
 
   io.emit('task_update', { type: 'completed', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'done' } });
 
+  // Trigger memory summarization on task close
+  const sessionId = task.sessionId;
+  if (sessionId && summarizer) {
+    summarizer.checkAndCompact(sessionId).catch((err: any) => {
+      console.warn('[Memory] Task-close summarization failed:', err?.message);
+    });
+  }
+
   res.json({
     task: taskManager.getTask(task.id),
     status: 'done',
@@ -1901,6 +1909,25 @@ agentManager.on('agent:message', (message) => {
   }
 });
 
+// --- Cost control ---
+modelRouter.on('cost:alert', (alert) => {
+  const { agentId, alertType, message, dailyUsed, dailyCap } = alert;
+  const ratio = dailyUsed / dailyCap;
+
+  if (ratio >= 1.2) {
+    console.error(`[CostControl] BLOCKED: ${agentId} at ${(ratio * 100).toFixed(0)}% of daily cap`);
+    agentManager.setAgentStatus(agentId as AgentId, 'blocked' as any);
+    io.emit('agent_status', { agentId, status: 'blocked', reason: 'cost-cap-exceeded' });
+    io.emit('cost_update', { type: 'agent-blocked', agentId, dailyUsed, dailyCap });
+  } else if (ratio >= 1.0) {
+    console.warn(`[CostControl] THROTTLE: ${agentId} at ${(ratio * 100).toFixed(0)}% — model downgraded`);
+    io.emit('cost_update', { type: 'agent-throttled', agentId, dailyUsed, dailyCap });
+  } else {
+    console.warn(`[CostControl] ALERT: ${message}`);
+    io.emit('cost_update', { type: 'threshold-warning', agentId, dailyUsed, dailyCap });
+  }
+});
+
 // --- Task updates ---
 taskManager.on('task:created', (event) => {
   io.emit('task_update', { type: 'created', event });
@@ -1920,6 +1947,14 @@ taskManager.on('task:assigned', (event) => {
 
 taskManager.on('task:completed', (event) => {
   io.emit('task_update', { type: 'completed', event });
+
+  // Trigger memory summarization on task close
+  const sessionId = event.sessionId;
+  if (sessionId && summarizer) {
+    summarizer.checkAndCompact(sessionId).catch((err: any) => {
+      console.warn('[Memory] Task-close summarization failed:', err?.message);
+    });
+  }
 });
 
 taskManager.on('task:cancelled', (event) => {

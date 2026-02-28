@@ -271,6 +271,18 @@ CREATE INDEX IF NOT EXISTS idx_general_audit_type ON audit_log (message_type);
 CREATE INDEX IF NOT EXISTS idx_general_audit_client ON audit_log (client_id);
 CREATE INDEX IF NOT EXISTS idx_general_audit_timestamp ON audit_log (timestamp DESC);
 
+-- Enforce INSERT-only on audit_log (no UPDATE, no DELETE)
+CREATE OR REPLACE RULE audit_log_no_update AS
+    ON UPDATE TO audit_log DO INSTEAD NOTHING;
+
+CREATE OR REPLACE RULE audit_log_no_delete AS
+    ON DELETE TO audit_log DO INSTEAD NOTHING;
+
+COMMENT ON TABLE audit_log IS
+  'Immutable append-only audit log for all WebSocket messages. '
+  'UPDATE and DELETE operations are blocked by PostgreSQL rules. '
+  'Hash chain integrity: each entry''s hash covers all prior entries via SHA-256.';
+
 -- =============================================================================
 -- Model Configurations
 -- =============================================================================
