@@ -669,7 +669,8 @@ function autoAssignAgent(taskTitle: string, taskDescription: string): AgentId | 
       }
     }
   }
-  return null;
+  // Fallback: assign to orchestrator instead of failing
+  return 'bmad-master';
 }
 
 app.post('/api/tasks/:taskId/start', async (req, res) => {
@@ -713,8 +714,38 @@ app.post('/api/tasks/:taskId/start', async (req, res) => {
 
     const result = await agentRunner.processUserMessage(assignedAgent, taskPrompt, task.sessionId);
 
+    // Store the agent response on the task so it persists through API polling
+    taskManager.updateTask(task.id, {
+      metadata: { agentResponse: result.content, agentModel: result.model },
+    }, assignedAgent);
+
     // Move to review
     taskManager.moveTask(task.id, 'review', assignedAgent);
+
+    // Emit socket events for real-time dashboard updates
+    const agentConfig = agentManager.getConfig(assignedAgent);
+    const responseTimestamp = new Date().toISOString();
+    const responseMessage = {
+      id: `msg-${task.id}-response`,
+      from: assignedAgent as any,
+      to: 'user' as const,
+      type: 'task.complete' as const,
+      payload: { content: result.content },
+      sessionId: task.sessionId,
+      timestamp: responseTimestamp,
+    };
+    sessionManager.addMessage(task.sessionId, responseMessage);
+    io.emit('message', {
+      id: responseMessage.id,
+      from: agentConfig?.name ?? assignedAgent,
+      to: 'user',
+      type: 'task',
+      content: result.content,
+      taskId: task.id,
+      model: result.model,
+      sessionId: task.sessionId,
+      timestamp: responseTimestamp,
+    });
 
     io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
 

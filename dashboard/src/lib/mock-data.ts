@@ -27,6 +27,7 @@ export interface Task {
   startTime: string;
   artifacts?: string[];
   waitingForHuman?: boolean;
+  agentResponse?: string;
 }
 
 export interface Message {

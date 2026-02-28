@@ -225,6 +225,7 @@ function mapGatewayTask(gw: {
     priority,
     startTime: gw.createdAt || new Date().toISOString(),
     artifacts: gw.artifacts,
+    agentResponse: (gw.metadata?.agentResponse as string) || undefined,
   };
 }
 
@@ -283,54 +284,59 @@ function DashboardContent() {
   const loadData = useCallback(async () => {
     try {
       // Fetch agents, tasks, models, costs, and delegations in parallel
+      // Each call is individually wrapped to prevent Chrome extensions from
+      // breaking the Promise.allSettled flow with unhandled rejections.
+      const safe = <T,>(p: Promise<T>) => p.catch((err: unknown) => {
+        console.warn("[loadData]", err instanceof Error ? err.message : err);
+        return undefined as unknown as T;
+      });
       const results = await Promise.allSettled([
-        apiFetchAgents(),
-        apiFetchTasks(),
-        fetchModelAssignments(),
-        fetchModelCosts(),
-        fetchViadpDelegations(),
+        safe(apiFetchAgents()),
+        safe(apiFetchTasks()),
+        safe(fetchModelAssignments()),
+        safe(fetchModelCosts()),
+        safe(fetchViadpDelegations()),
       ]);
 
+      // Unwrap results (safe() makes them all "fulfilled", but value may be undefined on failure)
+      const agentsRes = results[0].status === "fulfilled" ? results[0].value : undefined;
+      const tasksRes = results[1].status === "fulfilled" ? results[1].value : undefined;
+      const assignRes = results[2].status === "fulfilled" ? results[2].value : undefined;
+      const costsRes = results[3].status === "fulfilled" ? results[3].value : undefined;
+      const delegRes = results[4].status === "fulfilled" ? results[4].value : undefined;
+
       // Process model assignments
-      if (results[2].status === "fulfilled") {
-        assignmentsRef.current = results[2].value.assignments;
+      if (assignRes?.assignments) {
+        assignmentsRef.current = assignRes.assignments;
       }
 
       // Process cost data
-      if (results[3].status === "fulfilled") {
-        costByAgentRef.current = results[3].value.summary.perAgent ?? {};
-        setTodayCost(results[3].value.summary.totalCost ?? 0);
+      if (costsRes?.summary) {
+        costByAgentRef.current = costsRes.summary.perAgent ?? {};
+        setTodayCost(costsRes.summary.totalCost ?? 0);
       }
 
-      // Process agents (needs assignments and costs) - fall back to mockAgents on failure or empty
-      if (results[0].status === "fulfilled") {
-        const mapped = results[0].value.agents.map((gw) =>
+      // Process agents - fall back to mockAgents on failure or empty
+      if (agentsRes?.agents?.length) {
+        const mapped = agentsRes.agents.map((gw) =>
           mapGatewayAgent(gw, assignmentsRef.current, costByAgentRef.current)
         );
-        if (mapped.length > 0) {
-          setAgents(mapped);
-        } else {
-          setAgents((prev) => (prev.length === 0 ? mockAgents : prev));
-        }
+        setAgents(mapped);
       } else {
         setAgents((prev) => (prev.length === 0 ? mockAgents : prev));
       }
 
-      // Process tasks - fall back to mockTasks on failure or empty response
-      if (results[1].status === "fulfilled") {
-        const mapped = results[1].value.tasks.map(mapGatewayTask);
-        if (mapped.length > 0) {
-          setTasks(mapped);
-        } else {
-          setTasks((prev) => (prev.length === 0 ? mockTasks : prev));
-        }
+      // Process tasks - fall back to mockTasks on failure or empty
+      if (tasksRes?.tasks?.length) {
+        const mapped = tasksRes.tasks.map(mapGatewayTask);
+        setTasks(mapped);
       } else {
         setTasks((prev) => (prev.length === 0 ? mockTasks : prev));
       }
 
       // Process delegations
-      if (results[4].status === "fulfilled") {
-        const mapped = results[4].value.delegations.map(mapGatewayDelegation);
+      if (delegRes?.delegations) {
+        const mapped = delegRes.delegations.map(mapGatewayDelegation);
         setDelegations(mapped);
       }
     } catch (err) {
@@ -515,9 +521,16 @@ function DashboardContent() {
   const handleTaskStart = useCallback(async (taskId: string) => {
     setProcessingTasks(prev => new Set(prev).add(taskId));
     try {
-      await startTask(taskId);
+      const result = await startTask(taskId);
+      // Store the agent response on the task so the expanded card can show it
+      if (result?.response) {
+        setTasks(prev => prev.map(t =>
+          t.id === taskId ? { ...t, agentResponse: result.response } : t
+        ));
+      }
     } catch (err) {
       console.error("Failed to start task:", err);
+    } finally {
       setProcessingTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
     }
   }, []);

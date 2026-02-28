@@ -133,8 +133,23 @@ function TaskCardExpanded({ task, agent, locale, messages, onClose, onSwitchToCo
           </span>
         </div>
 
+        {/* Agent Response section */}
+        {task.agentResponse && (
+          <div className="border-t border-border/40 pt-4">
+            <h4 className="text-sm font-semibold text-text-secondary mb-2 flex items-center gap-2">
+              <MessageSquare size={14} />
+              {isAr ? "رد الوكيل" : "Agent Response"}
+            </h4>
+            <div className="max-h-72 overflow-y-auto rounded-lg bg-surface-light/30 p-3">
+              <pre className="text-xs text-text-secondary whitespace-pre-wrap break-words font-mono leading-relaxed">
+                {task.agentResponse}
+              </pre>
+            </div>
+          </div>
+        )}
+
         {/* Artifacts section */}
-        <div className="border-t border-border/40 pt-4">
+        <div className="border-t border-border/40 pt-4 mt-4">
           <h4 className="text-sm font-semibold text-text-secondary mb-2 flex items-center gap-2">
             <FileText size={14} />
             {t("kanban.artifacts")}

@@ -4,18 +4,34 @@ const API_BASE = typeof window !== 'undefined'
 
 // Typed fetch wrapper
 async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`);
+  } catch {
+    throw new Error(`Gateway unreachable: ${endpoint}`);
+  }
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `API error: ${res.status}`);
+  }
   return res.json();
 }
 
 async function postAPI<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(`Gateway unreachable: ${endpoint}`);
+  }
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `API error: ${res.status}`);
+  }
   return res.json();
 }
 
