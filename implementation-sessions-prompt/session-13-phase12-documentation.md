@@ -1113,32 +1113,32 @@ Create a team with these agents working in parallel:
 
 After all work is complete, verify:
 
-- [ ] `/forge-team/README.md` has been fully rewritten
-- [ ] README contains a Mermaid architecture diagram (not ASCII)
-- [ ] README agent model table matches `model-router.ts` lines 110-171 exactly:
+- [x] `/forge-team/README.md` has been fully rewritten
+- [x] README contains a Mermaid architecture diagram (not ASCII)
+- [x] README agent model table matches `model-router.ts` lines 110-171 exactly:
   - Architect: `claude-opus-4-6` (NOT `gemini-3.1-pro`)
   - Backend Dev: `claude-opus-4-6` (NOT `claude-sonnet-4.6`)
   - QA Architect: `claude-opus-4-6` (NOT `gemini-2.0-flash`)
   - Security: `claude-opus-4-6` (NOT `gemini-3.1-pro`)
   - Scrum Master: `gemini-flash-3` (NOT `gemini-2.0-flash`)
   - Tech Writer: `claude-sonnet-4-6` (NOT `gemini-2.0-flash`)
-- [ ] README includes: installation guide, environment variables, project structure, development workflow
-- [ ] README references Node.js 22+ (not 20)
-- [ ] README mentions port 18789 (not 3001)
-- [ ] `/forge-team/docs/api-reference.md` exists with ALL REST endpoints documented
-- [ ] Each endpoint has: method, path, description, request schema, response schema
-- [ ] `/forge-team/docs/websocket-events.md` exists with ALL WebSocket event types
-- [ ] Each event has: direction, name, payload schema
-- [ ] `/forge-team/docs/deployment.md` exists with Docker Compose AND Kubernetes sections
-- [ ] Deployment guide includes: prerequisites, setup steps, service URLs, troubleshooting
-- [ ] `/forge-team/docs/VIADP-SPEC.md` exists as a standalone specification
-- [ ] VIADP spec covers all 5 pillars with Mermaid diagrams
-- [ ] VIADP spec includes: protocol flow sequence diagram, trust model equations, token format, audit chain
-- [ ] VIADP spec references arXiv:2602.11865
-- [ ] Mermaid diagrams exist for: architecture, VIADP delegation flow, workflow state machine, memory hierarchy, agent communication
-- [ ] All 4 workflow YAML files have documentation comment headers
-- [ ] Workflow comments explain: purpose, phases, model overrides rationale, approval gates
-- [ ] No YAML values were changed in workflow files (comments only)
-- [ ] No string `gpt-4o` or `gpt-4o-mini` appears in any documentation
-- [ ] All documentation references the correct port (18789, not 3001)
-- [ ] All model references in documentation match `model-router.ts` (the canonical source)
+- [x] README includes: installation guide, environment variables, project structure, development workflow
+- [x] README references Node.js 22+ (not 20)
+- [x] README mentions port 18789 (not 3001)
+- [x] `/forge-team/docs/api-reference.md` exists with ALL REST endpoints documented
+- [x] Each endpoint has: method, path, description, request schema, response schema
+- [x] `/forge-team/docs/websocket-events.md` exists with ALL WebSocket event types
+- [x] Each event has: direction, name, payload schema
+- [x] `/forge-team/docs/deployment.md` exists with Docker Compose AND Kubernetes sections
+- [x] Deployment guide includes: prerequisites, setup steps, service URLs, troubleshooting
+- [x] `/forge-team/docs/VIADP-SPEC.md` exists as a standalone specification
+- [x] VIADP spec covers all 5 pillars with Mermaid diagrams
+- [x] VIADP spec includes: protocol flow sequence diagram, trust model equations, token format, audit chain
+- [x] VIADP spec references arXiv:2602.11865
+- [x] Mermaid diagrams exist for: architecture, VIADP delegation flow, workflow state machine, memory hierarchy, agent communication
+- [x] All 4 workflow YAML files have documentation comment headers
+- [x] Workflow comments explain: purpose, phases, model overrides rationale, approval gates
+- [x] No YAML values were changed in workflow files (comments only)
+- [x] No string `gpt-4o` or `gpt-4o-mini` appears in any documentation
+- [x] All documentation references the correct port (18789, not 3001)
+- [x] All model references in documentation match `model-router.ts` (the canonical source)
