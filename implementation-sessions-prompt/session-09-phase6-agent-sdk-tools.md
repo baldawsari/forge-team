@@ -527,25 +527,25 @@ Create a team with these agents working in parallel:
 
 After all work is complete, verify:
 
-- [ ] `dockerode`, `playwright`, and `@octokit/rest` are in `/forge-team/gateway/package.json` dependencies
-- [ ] `@types/dockerode` is in devDependencies
-- [ ] `/forge-team/gateway/src/tools/` directory exists with all files: `index.ts`, `types.ts`, `tool-registry.ts`, `sandbox-manager.ts`, `code-executor.ts`, `terminal-tools.ts`, `git-tools.ts`, `ci-tools.ts`, `browser-tools.ts`, `api-stubs.ts`
-- [ ] `ToolRegistry.toAnthropicTools()` returns a valid `tools` array for `@anthropic-ai/sdk`
-- [ ] `ToolRegistry.toGeminiTools()` returns valid function declarations for `@google/generative-ai`
-- [ ] `ToolRegistry.listForAgent('backend-dev')` returns code execution + git + terminal tools
-- [ ] `ToolRegistry.listForAgent('product-owner')` returns an empty array (no tools)
-- [ ] `ToolRegistry.listForAgent('qa-architect')` includes browser tools
-- [ ] `ToolRegistry.listForAgent('devops-engineer')` includes only CI tools, NOT code execution
-- [ ] `SandboxManager.createSandbox()` handles Docker daemon unavailability gracefully (returns error, does not crash)
-- [ ] `agent-runner.ts` `callAnthropic()` supports tool_use loop (max 5 rounds)
-- [ ] `agent-runner.ts` `callGemini()` supports function calling loop (max 5 rounds)
-- [ ] `processUserMessage()` only passes tools when agent is whitelisted AND model supports tools
-- [ ] REST endpoints respond: `GET /api/tools`, `GET /api/tools/:agentId`, `GET /api/sandboxes`
-- [ ] WS message types handled: `tool.list`, `tool.execute`
-- [ ] Docker socket volume mount added to gateway in `docker-compose.yml`
-- [ ] Sandbox network defined in `docker-compose.yml` with `internal: true`
-- [ ] External API env vars added to `.env.example` with placeholder values
-- [ ] All external API stubs throw descriptive errors when env vars are not set
-- [ ] `SandboxManager.destroyAll()` is called on gateway SIGTERM/SIGINT
-- [ ] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds with zero errors (or only pre-existing errors)
-- [ ] All existing gateway functionality is preserved — no existing switch cases, routes, or handlers were removed
+- [x] `dockerode`, `playwright`, and `@octokit/rest` are in `/forge-team/gateway/package.json` dependencies
+- [x] `@types/dockerode` is in devDependencies
+- [x] `/forge-team/gateway/src/tools/` directory exists with all files: `index.ts`, `types.ts`, `tool-registry.ts`, `sandbox-manager.ts`, `code-executor.ts`, `terminal-tools.ts`, `git-tools.ts`, `ci-tools.ts`, `browser-tools.ts`, `api-stubs.ts`
+- [x] `ToolRegistry.toAnthropicTools()` returns a valid `tools` array for `@anthropic-ai/sdk`
+- [x] `ToolRegistry.toGeminiTools()` returns valid function declarations for `@google/generative-ai`
+- [x] `ToolRegistry.listForAgent('backend-dev')` returns code execution + git + terminal tools
+- [x] `ToolRegistry.listForAgent('product-owner')` returns an empty array (no tools)
+- [x] `ToolRegistry.listForAgent('qa-architect')` includes browser tools
+- [x] `ToolRegistry.listForAgent('devops-engineer')` includes only CI tools, NOT code execution
+- [x] `SandboxManager.createSandbox()` handles Docker daemon unavailability gracefully (returns error, does not crash)
+- [x] `agent-runner.ts` `callAnthropic()` supports tool_use loop (max 5 rounds)
+- [x] `agent-runner.ts` `callGemini()` supports function calling loop (max 5 rounds)
+- [x] `processUserMessage()` only passes tools when agent is whitelisted AND model supports tools
+- [x] REST endpoints respond: `GET /api/tools`, `GET /api/tools/:agentId`, `GET /api/sandboxes`
+- [x] WS message types handled: `tool.list`, `tool.execute`
+- [x] Docker socket volume mount added to gateway in `docker-compose.yml`
+- [x] Sandbox network defined in `docker-compose.yml` with `internal: true`
+- [x] External API env vars added to `.env.example` with placeholder values
+- [x] All external API stubs throw descriptive errors when env vars are not set
+- [x] `SandboxManager.destroyAll()` is called on gateway SIGTERM/SIGINT
+- [x] `npx tsc --noEmit` in `/forge-team/gateway/` succeeds with zero errors (or only pre-existing errors)
+- [x] All existing gateway functionality is preserved — no existing switch cases, routes, or handlers were removed
