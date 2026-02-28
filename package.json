@@ -13,7 +13,20 @@
     "dev": "npm run dev --workspace=gateway",
     "dev:gateway": "npm run dev --workspace=gateway",
     "build": "npm run build --workspace=gateway",
-    "typecheck": "npm run typecheck --workspace=gateway"
+    "typecheck": "npm run typecheck --workspace=gateway",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project gateway --project viadp --project memory",
+    "test:unit:gateway": "vitest run --workspace=gateway",
+    "test:unit:viadp": "vitest run --workspace=viadp",
+    "test:unit:memory": "vitest run --workspace=memory",
+    "test:e2e": "npx playwright test --config=tests/playwright.config.ts",
+    "test:load": "vitest run tests/load/",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0"
   },
   "engines": {
     "node": ">=22.0.0"
