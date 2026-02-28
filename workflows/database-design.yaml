@@ -1,0 +1,107 @@
+name: Database Schema Design
+version: "1.0"
+description: Database schema design from requirements analysis through migration planning and documentation
+
+phases:
+  - name: requirements_analysis
+    display_name: "Requirements Analysis"
+    display_name_ar: "تحليل المتطلبات"
+    agents: [architect, business-analyst]
+    steps:
+      - name: analyze_data_requirements
+        agent: business-analyst
+        action: gather_data_requirements
+        outputs: [data_entities, relationship_requirements, volume_estimates]
+      - name: review_existing_schema
+        agent: architect
+        action: audit_current_schema
+        outputs: [schema_audit, compatibility_constraints]
+        parallel: true
+    checkpoint: true
+
+  - name: data_modeling
+    display_name: "Data Modeling"
+    display_name_ar: "نمذجة البيانات"
+    agents: [architect, backend-dev]
+    steps:
+      - name: design_logical_model
+        agent: architect
+        model_override: claude-opus-4.6
+        action: create_logical_data_model
+        inputs: [data_entities, relationship_requirements]
+        outputs: [er_diagram, entity_definitions, relationship_map]
+      - name: design_physical_schema
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: create_physical_schema
+        inputs: [er_diagram, volume_estimates, compatibility_constraints]
+        outputs: [table_definitions, index_strategy, partition_plan]
+        depends_on: [design_logical_model]
+      - name: define_constraints
+        agent: backend-dev
+        action: define_integrity_constraints
+        inputs: [table_definitions]
+        outputs: [constraint_definitions, trigger_specifications]
+        depends_on: [design_physical_schema]
+    checkpoint: true
+
+  - name: migration_planning
+    display_name: "Migration Planning"
+    display_name_ar: "تخطيط الترحيل"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: generate_migrations
+        agent: backend-dev
+        action: create_migration_scripts
+        inputs: [table_definitions, constraint_definitions]
+        outputs: [migration_scripts, rollback_scripts]
+      - name: plan_data_migration
+        agent: devops-engineer
+        action: plan_data_transfer
+        inputs: [migration_scripts, volume_estimates]
+        outputs: [migration_plan, downtime_estimate]
+        depends_on: [generate_migrations]
+    checkpoint: true
+
+  - name: schema_review
+    display_name: "Schema Review"
+    display_name_ar: "مراجعة المخطط"
+    agents: [architect, qa-architect]
+    steps:
+      - name: review_schema_design
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_schema_quality
+        inputs: [table_definitions, index_strategy, constraint_definitions]
+        outputs: [schema_review_feedback, optimization_suggestions]
+      - name: validate_migrations
+        agent: qa-architect
+        action: test_migration_scripts
+        inputs: [migration_scripts, rollback_scripts]
+        outputs: [migration_test_results, rollback_verification]
+        parallel: true
+    checkpoint: true
+
+  - name: schema_documentation
+    display_name: "Schema Documentation"
+    display_name_ar: "توثيق المخطط"
+    agents: [tech-writer, backend-dev]
+    steps:
+      - name: write_schema_docs
+        agent: tech-writer
+        action: document_schema
+        inputs: [table_definitions, er_diagram, constraint_definitions]
+        outputs: [schema_documentation, data_dictionary]
+      - name: write_migration_guide
+        agent: tech-writer
+        action: document_migration_procedures
+        inputs: [migration_plan, rollback_scripts]
+        outputs: [migration_guide, runbook]
+        parallel: true
+    checkpoint: true
+
+transitions:
+  requirements_analysis -> data_modeling: auto
+  data_modeling -> migration_planning: auto
+  migration_planning -> schema_review: requires_approval
+  schema_review -> schema_documentation: auto

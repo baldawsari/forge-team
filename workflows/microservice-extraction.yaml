@@ -1,0 +1,127 @@
+name: Microservice Extraction
+version: "1.0"
+description: Extract microservices from monolith through dependency analysis, boundary definition, and incremental extraction
+
+phases:
+  - name: dependency_analysis
+    display_name: "Dependency Analysis"
+    display_name_ar: "تحليل التبعيات"
+    agents: [architect, backend-dev]
+    steps:
+      - name: map_module_dependencies
+        agent: backend-dev
+        action: analyze_module_coupling
+        outputs: [dependency_matrix, coupling_metrics, shared_resources]
+      - name: identify_bounded_contexts
+        agent: architect
+        model_override: claude-opus-4.6
+        action: analyze_domain_boundaries
+        inputs: [dependency_matrix, coupling_metrics]
+        outputs: [bounded_contexts, domain_model, extraction_candidates]
+        depends_on: [map_module_dependencies]
+    checkpoint: true
+
+  - name: boundary_definition
+    display_name: "Boundary Definition"
+    display_name_ar: "تحديد الحدود"
+    agents: [architect, backend-dev]
+    steps:
+      - name: define_service_boundaries
+        agent: architect
+        model_override: claude-opus-4.6
+        action: define_service_contracts
+        inputs: [bounded_contexts, extraction_candidates]
+        outputs: [service_boundaries, api_contracts, data_ownership_map]
+      - name: design_communication_patterns
+        agent: architect
+        action: design_inter_service_communication
+        inputs: [service_boundaries, api_contracts]
+        outputs: [communication_patterns, event_schemas, sync_async_strategy]
+        depends_on: [define_service_boundaries]
+      - name: plan_data_separation
+        agent: backend-dev
+        action: plan_database_decomposition
+        inputs: [data_ownership_map, shared_resources]
+        outputs: [data_separation_plan, migration_scripts]
+        depends_on: [define_service_boundaries]
+    checkpoint: true
+
+  - name: service_extraction
+    display_name: "Service Extraction"
+    display_name_ar: "استخراج الخدمة"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: extract_service_code
+        agent: backend-dev
+        action: extract_and_refactor_service
+        inputs: [service_boundaries, api_contracts, communication_patterns]
+        outputs: [extracted_service_code, service_configuration]
+      - name: setup_service_infrastructure
+        agent: devops-engineer
+        action: provision_service_infrastructure
+        inputs: [extracted_service_code, service_configuration]
+        outputs: [service_infrastructure, deployment_config, ci_pipeline]
+        depends_on: [extract_service_code]
+      - name: implement_data_migration
+        agent: backend-dev
+        action: execute_data_separation
+        inputs: [data_separation_plan, migration_scripts]
+        outputs: [separated_database, data_sync_mechanism]
+        parallel: true
+    checkpoint: true
+
+  - name: integration_testing
+    display_name: "Integration Testing"
+    display_name_ar: "اختبار التكامل"
+    agents: [qa-architect, backend-dev]
+    steps:
+      - name: test_service_contracts
+        agent: qa-architect
+        action: run_contract_tests
+        inputs: [api_contracts, extracted_service_code]
+        outputs: [contract_test_results, compatibility_report]
+      - name: test_end_to_end_flows
+        agent: qa-architect
+        action: run_e2e_integration_tests
+        inputs: [extracted_service_code, communication_patterns]
+        outputs: [e2e_test_results, latency_measurements]
+        depends_on: [test_service_contracts]
+      - name: test_data_consistency
+        agent: backend-dev
+        action: verify_data_sync
+        inputs: [separated_database, data_sync_mechanism]
+        outputs: [data_consistency_report]
+        parallel: true
+    checkpoint: true
+
+  - name: deployment
+    display_name: "Deployment"
+    display_name_ar: "النشر"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: deploy_service
+        agent: devops-engineer
+        action: deploy_microservice
+        inputs: [service_infrastructure, deployment_config]
+        outputs: [deployment_status, service_endpoints]
+        approval_required: true
+      - name: configure_routing
+        agent: devops-engineer
+        action: setup_traffic_routing
+        inputs: [service_endpoints]
+        outputs: [routing_config, strangler_fig_setup]
+        depends_on: [deploy_service]
+      - name: update_architecture_docs
+        agent: architect
+        model_override: gemini-flash-3
+        action: update_service_catalog
+        inputs: [service_boundaries, service_endpoints, api_contracts]
+        outputs: [updated_architecture_docs, service_catalog]
+        depends_on: [deploy_service]
+    checkpoint: true
+
+transitions:
+  dependency_analysis -> boundary_definition: auto
+  boundary_definition -> service_extraction: requires_approval
+  service_extraction -> integration_testing: auto
+  integration_testing -> deployment: requires_approval

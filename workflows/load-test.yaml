@@ -1,0 +1,121 @@
+name: Load & Stress Testing
+version: "1.0"
+description: Comprehensive load and stress testing workflow to validate system performance under peak conditions
+
+phases:
+  - name: test_design
+    display_name: "Test Design"
+    display_name_ar: "تصميم الاختبارات"
+    agents: [qa-architect, backend-dev]
+    steps:
+      - name: define_scenarios
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: define_load_scenarios
+        outputs: [test_scenarios, performance_baselines, sla_targets]
+        approval_required: true
+      - name: identify_bottlenecks
+        agent: backend-dev
+        action: analyze_potential_bottlenecks
+        inputs: [test_scenarios]
+        outputs: [bottleneck_analysis, critical_paths]
+        depends_on: [define_scenarios]
+    checkpoint: true
+
+  - name: environment_setup
+    display_name: "Environment Setup"
+    display_name_ar: "إعداد البيئة"
+    agents: [devops-engineer]
+    steps:
+      - name: provision_environment
+        agent: devops-engineer
+        action: provision_load_test_env
+        outputs: [test_environment, infra_config, monitoring_agents]
+      - name: configure_tools
+        agent: devops-engineer
+        action: configure_load_test_tools
+        inputs: [test_scenarios, test_environment]
+        outputs: [tool_config, test_scripts, data_generators]
+        depends_on: [provision_environment]
+      - name: validate_environment
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: validate_test_environment
+        inputs: [test_environment, tool_config]
+        outputs: [environment_validation_report]
+        depends_on: [configure_tools]
+    checkpoint: true
+
+  - name: test_execution
+    display_name: "Test Execution"
+    display_name_ar: "تنفيذ الاختبارات"
+    agents: [qa-architect, devops-engineer]
+    steps:
+      - name: run_baseline
+        agent: qa-architect
+        action: run_baseline_test
+        inputs: [test_scripts, test_environment]
+        outputs: [baseline_results, baseline_metrics]
+      - name: run_load_test
+        agent: qa-architect
+        action: run_load_test
+        inputs: [test_scripts, baseline_metrics]
+        outputs: [load_test_results, performance_metrics]
+        depends_on: [run_baseline]
+      - name: run_stress_test
+        agent: qa-architect
+        action: run_stress_test
+        inputs: [test_scripts, performance_metrics]
+        outputs: [stress_test_results, breaking_point_data]
+        depends_on: [run_load_test]
+      - name: monitor_infrastructure
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: monitor_during_tests
+        inputs: [monitoring_agents, test_environment]
+        outputs: [infra_metrics, resource_utilization]
+        parallel: true
+    checkpoint: true
+
+  - name: results_analysis
+    display_name: "Results Analysis"
+    display_name_ar: "تحليل النتائج"
+    agents: [qa-architect, backend-dev]
+    steps:
+      - name: analyze_performance
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: analyze_performance_data
+        inputs: [load_test_results, stress_test_results, infra_metrics]
+        outputs: [performance_analysis, bottleneck_report, optimization_recommendations]
+      - name: review_code_hotspots
+        agent: backend-dev
+        action: identify_code_hotspots
+        inputs: [bottleneck_report, performance_metrics]
+        outputs: [hotspot_analysis, optimization_plan]
+        depends_on: [analyze_performance]
+    checkpoint: true
+
+  - name: reporting
+    display_name: "Reporting"
+    display_name_ar: "إعداد التقارير"
+    agents: [qa-architect, tech-writer]
+    steps:
+      - name: compile_report
+        agent: qa-architect
+        action: compile_load_test_report
+        inputs: [performance_analysis, optimization_recommendations, sla_targets]
+        outputs: [load_test_report, sla_compliance_status]
+      - name: write_documentation
+        agent: tech-writer
+        action: write_performance_report
+        inputs: [load_test_report, optimization_plan]
+        outputs: [final_report, capacity_planning_guide]
+        depends_on: [compile_report]
+    checkpoint: true
+
+transitions:
+  test_design -> environment_setup: requires_approval
+  environment_setup -> test_execution: auto
+  test_execution -> results_analysis: auto
+  results_analysis -> reporting: auto

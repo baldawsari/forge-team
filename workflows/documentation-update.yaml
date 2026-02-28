@@ -1,0 +1,123 @@
+name: Documentation Update
+version: "1.0"
+description: Structured documentation update workflow from audit through publishing
+
+phases:
+  - name: documentation_audit
+    display_name: "Documentation Audit"
+    display_name_ar: "مراجعة التوثيق"
+    agents: [tech-writer, architect]
+    steps:
+      - name: audit_existing_docs
+        agent: tech-writer
+        action: audit_documentation
+        outputs: [audit_report, outdated_sections, missing_docs, broken_links]
+      - name: review_code_changes
+        agent: architect
+        action: review_recent_code_changes
+        outputs: [change_log, api_changes, architecture_changes]
+        parallel: true
+      - name: identify_gaps
+        agent: tech-writer
+        action: identify_documentation_gaps
+        inputs: [audit_report, change_log]
+        outputs: [gap_analysis, priority_list]
+        depends_on: [audit_existing_docs, review_code_changes]
+    checkpoint: true
+
+  - name: update_planning
+    display_name: "Update Planning"
+    display_name_ar: "تخطيط التحديثات"
+    agents: [tech-writer, product-owner]
+    steps:
+      - name: create_update_plan
+        agent: tech-writer
+        action: plan_documentation_updates
+        inputs: [gap_analysis, priority_list]
+        outputs: [update_plan, content_outline, assignment_list]
+        approval_required: true
+      - name: validate_priorities
+        agent: product-owner
+        model_override: gemini-flash-3
+        action: validate_doc_priorities
+        inputs: [update_plan, priority_list]
+        outputs: [validated_plan, stakeholder_requirements]
+        depends_on: [create_update_plan]
+    checkpoint: true
+
+  - name: content_writing
+    display_name: "Content Writing"
+    display_name_ar: "كتابة المحتوى"
+    agents: [tech-writer, architect]
+    steps:
+      - name: update_api_docs
+        agent: tech-writer
+        action: update_api_documentation
+        inputs: [api_changes, validated_plan]
+        outputs: [updated_api_docs, api_examples]
+      - name: update_architecture_docs
+        agent: architect
+        action: update_architecture_docs
+        inputs: [architecture_changes, validated_plan]
+        outputs: [updated_arch_docs, updated_diagrams]
+        parallel: true
+      - name: update_user_guides
+        agent: tech-writer
+        action: update_user_guides
+        inputs: [validated_plan, stakeholder_requirements]
+        outputs: [updated_user_guides, tutorial_updates]
+        parallel: true
+    checkpoint: true
+
+  - name: peer_review
+    display_name: "Peer Review"
+    display_name_ar: "المراجعة من الأقران"
+    agents: [architect, product-owner]
+    steps:
+      - name: technical_review
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_technical_accuracy
+        inputs: [updated_api_docs, updated_arch_docs]
+        outputs: [technical_review_feedback, accuracy_report]
+      - name: stakeholder_review
+        agent: product-owner
+        action: review_content_completeness
+        inputs: [updated_user_guides, stakeholder_requirements]
+        outputs: [content_review_feedback, completeness_report]
+        parallel: true
+      - name: incorporate_feedback
+        agent: tech-writer
+        model_override: gemini-flash-3
+        action: incorporate_review_feedback
+        inputs: [technical_review_feedback, content_review_feedback]
+        outputs: [final_docs, revision_log]
+        depends_on: [technical_review, stakeholder_review]
+    checkpoint: true
+
+  - name: publishing
+    display_name: "Publishing"
+    display_name_ar: "النشر"
+    agents: [tech-writer, devops-engineer]
+    steps:
+      - name: publish_docs
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: deploy_documentation
+        inputs: [final_docs]
+        outputs: [published_url, deployment_log]
+        approval_required: true
+      - name: verify_publishing
+        agent: tech-writer
+        model_override: gemini-flash-3
+        action: verify_published_docs
+        inputs: [published_url, final_docs]
+        outputs: [verification_report, link_check_results]
+        depends_on: [publish_docs]
+    checkpoint: true
+
+transitions:
+  documentation_audit -> update_planning: auto
+  update_planning -> content_writing: requires_approval
+  content_writing -> peer_review: auto
+  peer_review -> publishing: auto

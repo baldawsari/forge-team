@@ -26,6 +26,11 @@ import type { ToolRunner } from './openclaw/tool-runner';
 import type { WorkflowExecutor } from './workflow-engine';
 import type { ToolRegistry } from './tools/tool-registry';
 import type { SandboxManager } from './tools/sandbox-manager';
+import type { AuditMiddleware } from './audit-middleware';
+import { verifyToken, type TokenPayload, type AuthRole } from './auth';
+import { hasPermission } from './rbac';
+
+const AUTH_ENABLED = process.env.NODE_ENV !== 'development' || process.env.FORCE_AUTH === 'true';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +54,8 @@ export interface ConnectedClient {
   lastMessageAt: string;
   /** Whether the client is alive (for heartbeat) */
   isAlive: boolean;
+  authenticated: boolean;
+  tokenPayload: TokenPayload | null;
 }
 
 /** Standard WebSocket message envelope */
@@ -70,11 +77,16 @@ export interface GatewayServerEvents {
   'error': (error: Error) => void;
 }
 
+export function containsHumanMention(content: string): boolean {
+  return /@human\b/i.test(content) || /@إنسان\b/.test(content);
+}
+
 // ---------------------------------------------------------------------------
 // Gateway WebSocket Server
 // ---------------------------------------------------------------------------
 
 export class GatewayServer extends EventEmitter<GatewayServerEvents> {
+  private static authWarningPrinted = false;
   private wss: WebSocketServer | null = null;
   private clients: Map<string, ConnectedClient> = new Map();
   /** Map agent IDs to their connected client IDs */
@@ -95,6 +107,7 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
   private workflowExecutor: WorkflowExecutor | null;
   private sdkToolRegistry: ToolRegistry | null;
   private sdkSandboxManager: SandboxManager | null;
+  private auditMiddleware: AuditMiddleware | null;
 
   constructor(deps: {
     sessionManager: SessionManager;
@@ -109,6 +122,7 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     workflowExecutor?: WorkflowExecutor;
     toolRegistry?: ToolRegistry;
     sandboxManager?: SandboxManager;
+    auditMiddleware?: AuditMiddleware;
   }) {
     super();
     this.sessionManager = deps.sessionManager;
@@ -123,6 +137,7 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     this.workflowExecutor = deps.workflowExecutor ?? null;
     this.sdkToolRegistry = deps.toolRegistry ?? null;
     this.sdkSandboxManager = deps.sandboxManager ?? null;
+    this.auditMiddleware = deps.auditMiddleware ?? null;
   }
 
   /**
@@ -159,6 +174,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
     this.wireManagerEvents();
 
     console.log('[GatewayServer] WebSocket server attached and listening');
+    if (!AUTH_ENABLED && !GatewayServer.authWarningPrinted) {
+      console.warn('[GatewayServer] WARNING: Authentication disabled in development mode. Set FORCE_AUTH=true to enable.');
+      GatewayServer.authWarningPrinted = true;
+    }
   }
 
   // =========================================================================
@@ -184,6 +203,8 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       connectedAt: new Date().toISOString(),
       lastMessageAt: new Date().toISOString(),
       isAlive: true,
+      authenticated: !AUTH_ENABLED,
+      tokenPayload: null,
     };
 
     this.clients.set(clientId, client);
@@ -195,6 +216,57 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       console.log(`[GatewayServer] Agent ${agentId} connected (client: ${clientId})`);
     } else {
       console.log(`[GatewayServer] ${clientType} client connected: ${clientId}`);
+    }
+
+    if (AUTH_ENABLED) {
+      const token = url.searchParams.get('token');
+      if (token) {
+        const payload = verifyToken(token);
+        if (payload) {
+          client.authenticated = true;
+          client.tokenPayload = payload;
+          if (payload.role === 'agent' && clientType !== 'agent') {
+            ws.close(4003, 'Role mismatch: agent token cannot connect as ' + clientType);
+            return;
+          }
+          if (payload.role === 'agent' && payload.agentId && payload.agentId !== agentId) {
+            ws.close(4003, 'Agent ID mismatch');
+            return;
+          }
+          if (payload.role === 'dashboard-viewer' && clientType !== 'dashboard') {
+            ws.close(4003, 'Role mismatch: dashboard-viewer token cannot connect as ' + clientType);
+            return;
+          }
+          this.sendToClient(clientId, {
+            type: 'auth.success',
+            payload: { role: payload.role, agentId: payload.agentId },
+            timestamp: new Date().toISOString(),
+            sessionId: '',
+          });
+        } else {
+          this.sendToClient(clientId, {
+            type: 'auth.failed',
+            payload: { error: 'Invalid or expired token' },
+            timestamp: new Date().toISOString(),
+            sessionId: '',
+          });
+          ws.close(4003, 'Invalid or expired token');
+          return;
+        }
+      } else {
+        const authTimeout = setTimeout(() => {
+          if (!client.authenticated) {
+            this.sendToClient(clientId, {
+              type: 'auth.failed',
+              payload: { error: 'Authentication required' },
+              timestamp: new Date().toISOString(),
+              sessionId: '',
+            });
+            ws.close(4001, 'Authentication required');
+          }
+        }, 10_000);
+        (client as any)._authTimeout = authTimeout;
+      }
     }
 
     // Send welcome message
@@ -239,6 +311,10 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
   private handleDisconnect(clientId: string): void {
     const client = this.clients.get(clientId);
     if (!client) return;
+
+    if ((client as any)._authTimeout) {
+      clearTimeout((client as any)._authTimeout);
+    }
 
     // Unregister agent
     if (client.type === 'agent' && client.agentId) {
@@ -291,12 +367,73 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       return;
     }
 
+    if (this.auditMiddleware) {
+      this.auditMiddleware.logMessage(clientId, client.type, parsed, 'inbound');
+    }
+
     // Ensure timestamp
     if (!parsed.timestamp) {
       parsed.timestamp = new Date().toISOString();
     }
 
     this.emit('message:received', clientId, parsed);
+
+    // Handle auth.token messages for deferred authentication
+    if (parsed.type === 'auth.token' && AUTH_ENABLED && !client.authenticated) {
+      const token = parsed.payload?.token as string;
+      const payload = token ? verifyToken(token) : null;
+      if (payload) {
+        client.authenticated = true;
+        client.tokenPayload = payload;
+        if ((client as any)._authTimeout) {
+          clearTimeout((client as any)._authTimeout);
+          delete (client as any)._authTimeout;
+        }
+        this.sendToClient(clientId, {
+          type: 'auth.success',
+          payload: { role: payload.role, agentId: payload.agentId },
+          timestamp: new Date().toISOString(),
+          sessionId: '',
+        });
+      } else {
+        this.sendToClient(clientId, {
+          type: 'auth.failed',
+          payload: { error: 'Invalid or expired token' },
+          timestamp: new Date().toISOString(),
+          sessionId: '',
+        });
+        client.ws.close(4003, 'Invalid or expired token');
+      }
+      return;
+    }
+
+    // Reject unauthenticated messages
+    if (AUTH_ENABLED && !client.authenticated) {
+      this.sendToClient(clientId, {
+        type: 'system.error',
+        payload: { error: { code: 'UNAUTHENTICATED', message: 'Authentication required before sending messages' } },
+        timestamp: new Date().toISOString(),
+        sessionId: '',
+      });
+      return;
+    }
+
+    // RBAC check
+    const clientRole = client.tokenPayload?.role;
+    if (AUTH_ENABLED && clientRole && !hasPermission(clientRole, parsed.type)) {
+      this.sendToClient(clientId, {
+        type: 'system.error',
+        payload: {
+          error: {
+            code: 'FORBIDDEN',
+            message: `Insufficient permissions for message type: ${parsed.type}`,
+          },
+        },
+        timestamp: new Date().toISOString(),
+        sessionId: parsed.sessionId ?? '',
+      });
+      return;
+    }
 
     // Route based on message type
     switch (parsed.type) {
@@ -780,6 +917,12 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
       return;
     }
 
+    // Verify agent can only update own status
+    if (AUTH_ENABLED && client.tokenPayload?.role === 'agent' && client.tokenPayload?.agentId !== client.agentId) {
+      this.sendError(clientId, 'FORBIDDEN', 'Agents can only update their own status');
+      return;
+    }
+
     const newStatus = msg.payload?.status;
     if (newStatus) {
       this.agentManager.setAgentStatus(client.agentId, newStatus);
@@ -815,6 +958,14 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
 
     const client = this.clients.get(clientId);
     const from = client?.type === 'agent' && client.agentId ? client.agentId : 'user';
+
+    // Verify agent identity matches token
+    if (AUTH_ENABLED && client?.tokenPayload?.role === 'agent' && client.tokenPayload?.agentId) {
+      if (from !== client.tokenPayload.agentId) {
+        this.sendError(clientId, 'FORBIDDEN', 'Agent identity mismatch: cannot send as another agent');
+        return;
+      }
+    }
 
     const agentMessage: AgentMessage = {
       id: uuid(),
@@ -1428,6 +1579,9 @@ export class GatewayServer extends EventEmitter<GatewayServerEvents> {
 
     try {
       client.ws.send(JSON.stringify(message));
+      if (this.auditMiddleware) {
+        this.auditMiddleware.logMessage(clientId, client.type, message, 'outbound');
+      }
       return true;
     } catch (error) {
       console.error(`[GatewayServer] Failed to send to client ${clientId}:`, error);

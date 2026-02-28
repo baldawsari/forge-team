@@ -34,7 +34,7 @@ RUN npm install -g tsx
 
 # Verify gateway compiles
 WORKDIR /app/gateway
-RUN npx tsc --noEmit || true
+RUN npx tsc --noEmit
 
 # Install Playwright browsers for QA agent browser testing
 RUN npx playwright install --with-deps chromium

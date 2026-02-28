@@ -27,7 +27,7 @@ import { TaskManager } from './task-manager';
 import { VIADPEngine } from './viadp-engine';
 import { ModelRouter } from './model-router';
 import { VoiceHandler } from './voice-handler';
-import { GatewayServer } from './server';
+import { GatewayServer, containsHumanMention } from './server';
 import { AgentRunner } from './agent-runner';
 import { PartyModeEngine } from './party-mode';
 import { OpenClawAgentRegistry, MessageBus, ToolRunner } from './openclaw';
@@ -38,11 +38,13 @@ import { MemoryManager, GeminiFileSearch, VectorStore, Summarizer } from '@forge
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { ToolRegistry, SandboxManager } from './tools';
+import { generateToken, verifyToken, type AuthRole } from './auth';
 import { registerCodeExecutorTool } from './tools/code-executor';
 import { registerTerminalTool } from './tools/terminal-tools';
 import { registerGitTools } from './tools/git-tools';
 import { registerCITools } from './tools/ci-tools';
 import { registerBrowserTools } from './tools/browser-tools';
+import { AuditMiddleware } from './audit-middleware';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -50,6 +52,7 @@ import { registerBrowserTools } from './tools/browser-tools';
 
 const PORT = parseInt(process.env.GATEWAY_PORT ?? '18789', 10);
 const HOST = process.env.GATEWAY_HOST ?? '0.0.0.0';
+const AUTH_ENABLED = process.env.NODE_ENV !== 'development' || process.env.FORCE_AUTH === 'true';
 
 // ---------------------------------------------------------------------------
 // Initialize Managers
@@ -124,6 +127,9 @@ registerGitTools(toolRegistry, sandboxManager);
 registerCITools(toolRegistry);
 registerBrowserTools(toolRegistry, sandboxManager);
 console.log(`[Init] ToolRegistry initialized with ${toolRegistry.listAll().length} tools`);
+
+const auditMiddleware = new AuditMiddleware();
+console.log('[Init] AuditMiddleware initialized');
 
 const agentRunner = new AgentRunner({
   modelRouter,
@@ -217,6 +223,12 @@ app.get('/health', (_req, res) => {
       },
     },
   });
+});
+
+app.get('/api/health/providers', async (_req, res) => {
+  const health = await agentRunner.checkProviderHealth();
+  const allHealthy = Object.values(health).every(h => h.available);
+  res.status(allHealthy ? 200 : 503).json({ providers: health });
 });
 
 /**
@@ -507,9 +519,35 @@ app.post('/api/workflows/start', express.json(), async (req, res) => {
   }
 });
 
+app.post('/api/workflows/pause-all', (_req, res) => {
+  try {
+    const result = workflowExecutor.pauseAllWorkflows();
+    io.emit('workflow_update', { type: 'global_pause', paused: result.paused });
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/workflows/resume-all', async (_req, res) => {
+  try {
+    const result = await workflowExecutor.resumeAllWorkflows();
+    io.emit('workflow_update', { type: 'global_resume', resumed: result.resumed });
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/workflows/status', (_req, res) => {
+  const statuses = workflowExecutor.getWorkflowStatuses();
+  res.json({ workflows: statuses });
+});
+
 app.post('/api/workflows/:instanceId/pause', async (req, res) => {
   try {
     await workflowExecutor.pauseWorkflow(req.params.instanceId);
+    io.emit('workflow_update', { type: 'instance_paused', instanceId: req.params.instanceId });
     res.json({ status: 'paused', timestamp: new Date().toISOString() });
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to pause workflow' });
@@ -520,6 +558,7 @@ app.post('/api/workflows/:instanceId/resume', express.json(), async (req, res) =
   try {
     const { approvalData } = req.body;
     await workflowExecutor.resumeWorkflow(req.params.instanceId, approvalData);
+    io.emit('workflow_update', { type: 'instance_resumed', instanceId: req.params.instanceId });
     res.json({ status: 'resumed', timestamp: new Date().toISOString() });
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to resume workflow' });
@@ -544,6 +583,31 @@ app.post('/api/workflows/:instanceId/cancel', async (req, res) => {
   }
 });
 
+app.get('/api/workflows/:name', (req, res) => {
+  try {
+    const loader = workflowExecutor.getLoader();
+    const definition = loader.loadWorkflow(`${req.params.name}.yaml`);
+    res.json({ workflow: definition, timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(404).json({ error: error?.message ?? 'Workflow not found' });
+  }
+});
+
+app.get('/api/workflow-instances', (req, res) => {
+  const sessionId = req.query.sessionId as string | undefined;
+  const instances = workflowExecutor.getAllInstances(sessionId);
+  res.json({ instances, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/workflow-instances/:id', (req, res) => {
+  const instance = workflowExecutor.getInstance(req.params.id);
+  if (instance) {
+    res.json({ instance, timestamp: new Date().toISOString() });
+  } else {
+    res.status(404).json({ error: 'Workflow instance not found' });
+  }
+});
+
 /**
  * Connection stats endpoint.
  */
@@ -565,6 +629,136 @@ app.get('/api/tools/:agentId', (req, res) => {
 app.get('/api/sandboxes', async (_req, res) => {
   const sandboxes = await sandboxManager.listActive();
   res.json({ sandboxes });
+});
+
+// ---------------------------------------------------------------------------
+// Human-in-the-Loop REST Endpoints
+// ---------------------------------------------------------------------------
+
+app.get('/api/interrupts', (_req, res) => {
+  const pending = workflowExecutor.getPendingInterrupts();
+  res.json({ interrupts: pending });
+});
+
+app.get('/api/interrupts/all', (_req, res) => {
+  const all = workflowExecutor.getAllInterrupts();
+  res.json({ interrupts: all });
+});
+
+app.post('/api/interrupts/:id/resolve', express.json(), (req, res) => {
+  const { id } = req.params;
+  const { approved, feedback } = req.body;
+  try {
+    workflowExecutor.resolveInterrupt(id, approved, feedback);
+    io.emit('interrupt_update', {
+      type: approved ? 'approved' : 'rejected',
+      interruptId: id,
+      feedback,
+      timestamp: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/escalations', (req, res) => {
+  const status = req.query.status as string | undefined;
+  let escalations = agentRunner.getEscalations();
+  if (status) {
+    escalations = escalations.filter(e => e.status === status);
+  }
+  res.json({ escalations });
+});
+
+app.post('/api/escalations/:id/review', express.json(), (req, res) => {
+  try {
+    agentRunner.reviewEscalation(req.params.id, req.body.feedback);
+    io.emit('escalation_update', {
+      type: 'reviewed',
+      escalationId: req.params.id,
+      timestamp: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/escalations/:id/dismiss', (req, res) => {
+  try {
+    agentRunner.dismissEscalation(req.params.id);
+    io.emit('escalation_update', {
+      type: 'dismissed',
+      escalationId: req.params.id,
+      timestamp: new Date().toISOString(),
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/agents/:agentId/takeover', (req, res) => {
+  try {
+    agentManager.takeOverAgent(req.params.agentId);
+    io.emit('agent_status', {
+      agentId: req.params.agentId,
+      newStatus: 'human_controlled',
+    });
+    res.json({ success: true, agentId: req.params.agentId });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/agents/:agentId/release', (req, res) => {
+  try {
+    agentManager.releaseAgent(req.params.agentId);
+    const state = agentManager.getState(req.params.agentId as AgentId);
+    io.emit('agent_status', {
+      agentId: req.params.agentId,
+      newStatus: state?.status ?? 'idle',
+    });
+    res.json({ success: true, agentId: req.params.agentId });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/agents/:agentId/human-message', express.json(), (req, res) => {
+  const { agentId } = req.params;
+  const { content, taskId } = req.body;
+
+  if (!agentManager.isAgentTakenOver(agentId)) {
+    res.status(400).json({ error: `Agent ${agentId} is not in takeover mode` });
+    return;
+  }
+
+  const messageId = uuid();
+  const message = {
+    id: messageId,
+    type: 'task',
+    from: agentId,
+    to: 'human-proxy',
+    payload: { content },
+    sessionId: 'human-takeover',
+    timestamp: new Date().toISOString(),
+    metadata: { humanProxy: true },
+  };
+
+  io.emit('message', message);
+
+  if (taskId) {
+    const task = taskManager.getTask(taskId);
+    if (task) {
+      task.metadata = task.metadata || {};
+      task.metadata.agentResponse = content;
+      task.metadata.humanProxy = true;
+    }
+  }
+
+  res.json({ success: true, messageId });
 });
 
 // -- Memory REST endpoints --
@@ -1141,6 +1335,90 @@ app.post('/api/tasks/:taskId/assign', (req, res) => {
   });
 });
 
+// -- Auth REST endpoints --
+
+app.post('/api/auth/token', express.json(), (req, res) => {
+  const { role, agentId } = req.body;
+  if (process.env.NODE_ENV !== 'development') {
+    const adminSecret = req.headers['x-admin-secret'];
+    if (adminSecret !== process.env.ADMIN_SECRET) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+  }
+  const token = generateToken({ sub: agentId ?? role, role, agentId });
+  res.json({ token, expiresIn: process.env.JWT_EXPIRY ?? '24h' });
+});
+
+app.get('/api/auth/verify', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    res.status(401).json({ error: 'No token provided' });
+    return;
+  }
+  const payload = verifyToken(token);
+  if (!payload) {
+    res.status(401).json({ error: 'Invalid token' });
+    return;
+  }
+  res.json({ valid: true, payload });
+});
+
+// -- Cost management REST endpoints --
+
+app.get('/api/costs/summary', (_req, res) => {
+  const summary = modelRouter.getCostSummary();
+  res.json({ summary, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/costs/agent/:agentId', (req, res) => {
+  const agentId = req.params.agentId;
+  const capStatus = modelRouter.checkCostCap(agentId as any);
+  const records = modelRouter.getCostRecords({ agentId: agentId as any });
+  res.json({ agentId, capStatus, recentRecords: records.slice(-20), timestamp: new Date().toISOString() });
+});
+
+app.put('/api/costs/caps/:agentId', express.json(), (req, res) => {
+  const agentId = req.params.agentId;
+  const { dailyCapUsd, weeklyCapUsd, alertThreshold } = req.body;
+  modelRouter.setCostCap(agentId as any, {
+    dailyCapUsd: dailyCapUsd ?? 50,
+    weeklyCapUsd: weeklyCapUsd ?? 200,
+    alertThreshold: alertThreshold ?? 0.8,
+  });
+  res.json({ agentId, cap: modelRouter.getCostCap(agentId as any), timestamp: new Date().toISOString() });
+});
+
+app.get('/api/costs/caps', (_req, res) => {
+  const caps: Record<string, any> = {};
+  const assignments = modelRouter.getAllAssignments();
+  for (const agentId of Object.keys(assignments)) {
+    caps[agentId] = modelRouter.getCostCap(agentId as any);
+  }
+  res.json({ caps, timestamp: new Date().toISOString() });
+});
+
+// -- Audit REST endpoints --
+
+app.get('/api/audit', (req, res) => {
+  const { from, to, type, clientId, limit, offset } = req.query;
+  const entries = auditMiddleware.getEntries({
+    from: from as string,
+    to: to as string,
+    type: type as string,
+    clientId: clientId as string,
+  });
+  const start = Number(offset ?? 0);
+  const end = start + Number(limit ?? 100);
+  const paginated = entries.slice(start, end);
+  res.json({ entries: paginated, total: entries.length });
+});
+
+app.get('/api/audit/verify', (_req, res) => {
+  const result = auditMiddleware.verifyIntegrity();
+  res.json(result);
+});
+
 // ---------------------------------------------------------------------------
 // Create HTTP + WebSocket Server
 // ---------------------------------------------------------------------------
@@ -1160,6 +1438,7 @@ const gatewayServer = new GatewayServer({
   workflowExecutor,
   toolRegistry,
   sandboxManager,
+  auditMiddleware,
 });
 
 gatewayServer.attach(httpServer);
@@ -1171,6 +1450,16 @@ gatewayServer.attach(httpServer);
 const io = new SocketIOServer(httpServer, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
   path: '/socket.io',
+});
+
+io.use((socket, next) => {
+  if (!AUTH_ENABLED) return next();
+  const token = socket.handshake.auth?.token ?? socket.handshake.query?.token;
+  if (!token) return next(new Error('Authentication required'));
+  const payload = verifyToken(token as string);
+  if (!payload) return next(new Error('Invalid token'));
+  (socket as any).tokenPayload = payload;
+  next();
 });
 
 io.on('connection', (socket) => {
@@ -1324,6 +1613,25 @@ io.on('connection', (socket) => {
             io.emit('message', responseMessage);
             agentManager.setAgentStatus(targetAgentId, 'idle');
 
+            if (containsHumanMention(result.content)) {
+              const intId = workflowExecutor.createInterrupt(
+                sessionId, targetAgentId, agentConfig.name, 'direct-message',
+                'human_mention', result.content,
+                `Agent ${agentConfig.name} requested human attention via @human mention`,
+              );
+              io.emit('interrupt_update', {
+                type: 'created',
+                interrupt: {
+                  id: intId, instanceId: sessionId, agentId: targetAgentId,
+                  agentName: agentConfig.name, stepId: 'direct-message',
+                  type: 'human_mention', question: result.content,
+                  context: `Agent ${agentConfig.name} requested human attention via @human mention`,
+                  createdAt: new Date().toISOString(),
+                },
+                timestamp: new Date().toISOString(),
+              });
+            }
+
             console.log(
               `[Chat] ${targetAgentId} replied: ${result.content.length} chars ` +
               `(model=${result.model}, tokens=${result.inputTokens}/${result.outputTokens})`,
@@ -1354,6 +1662,82 @@ io.on('connection', (socket) => {
             agentManager.setAgentStatus(targetAgentId, 'idle');
           });
       }
+    }
+  });
+
+  // -- Workflow WebSocket Commands --
+
+  socket.on('workflow:list', () => {
+    try {
+      const definitions = workflowExecutor.listDefinitions();
+      socket.emit('workflow:list', { workflows: definitions });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to list workflows' });
+    }
+  });
+
+  socket.on('workflow:start', async (data: { workflowName: string; sessionId: string }) => {
+    try {
+      if (!data?.workflowName || !data?.sessionId) {
+        socket.emit('workflow:error', { error: 'workflowName and sessionId are required' });
+        return;
+      }
+      const instance = await workflowExecutor.startWorkflow(data.workflowName, data.sessionId);
+      socket.emit('workflow:started', { instanceId: instance.id, workflowName: data.workflowName });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to start workflow' });
+    }
+  });
+
+  socket.on('workflow:approve', async (data: { instanceId: string; comment?: string }) => {
+    try {
+      if (!data?.instanceId) {
+        socket.emit('workflow:error', { error: 'instanceId is required' });
+        return;
+      }
+      await workflowExecutor.resumeWorkflow(data.instanceId, { approved: true, comment: data.comment });
+      socket.emit('workflow:approved', { instanceId: data.instanceId });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to approve' });
+    }
+  });
+
+  socket.on('workflow:reject', async (data: { instanceId: string; comment?: string }) => {
+    try {
+      if (!data?.instanceId) {
+        socket.emit('workflow:error', { error: 'instanceId is required' });
+        return;
+      }
+      await workflowExecutor.resumeWorkflow(data.instanceId, { approved: false, reason: data.comment ?? 'Rejected' });
+      socket.emit('workflow:rejected', { instanceId: data.instanceId });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to reject' });
+    }
+  });
+
+  socket.on('workflow:pause', async (data: { instanceId: string }) => {
+    try {
+      if (!data?.instanceId) {
+        socket.emit('workflow:error', { error: 'instanceId is required' });
+        return;
+      }
+      await workflowExecutor.pauseWorkflow(data.instanceId);
+      socket.emit('workflow:paused', { instanceId: data.instanceId });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to pause' });
+    }
+  });
+
+  socket.on('workflow:resume', async (data: { instanceId: string }) => {
+    try {
+      if (!data?.instanceId) {
+        socket.emit('workflow:error', { error: 'instanceId is required' });
+        return;
+      }
+      await workflowExecutor.resumeWorkflow(data.instanceId);
+      socket.emit('workflow:resumed', { instanceId: data.instanceId });
+    } catch (error: any) {
+      socket.emit('workflow:error', { error: error?.message ?? 'Failed to resume' });
     }
   });
 
@@ -1416,6 +1800,37 @@ agentManager.on('agent:task-failed', (agentId, taskId, sessionId, error) => {
 // --- Agent messages ---
 agentManager.on('agent:message', (message) => {
   io.emit('message', message);
+
+  const msgContent = message.payload?.content ?? '';
+  if (msgContent && containsHumanMention(msgContent)) {
+    const fromAgentId = message.from as string;
+    const fromConfig = agentManager.getConfig(fromAgentId as AgentId);
+    const fromAgentName = fromConfig?.name ?? fromAgentId;
+    const interruptId = workflowExecutor.createInterrupt(
+      message.sessionId ?? 'direct',
+      fromAgentId,
+      fromAgentName,
+      'direct-message',
+      'human_mention',
+      msgContent,
+      `Agent ${fromAgentName} requested human attention via @human mention`,
+    );
+    io.emit('interrupt_update', {
+      type: 'created',
+      interrupt: {
+        id: interruptId,
+        instanceId: message.sessionId ?? 'direct',
+        agentId: fromAgentId,
+        agentName: fromAgentName,
+        stepId: 'direct-message',
+        type: 'human_mention',
+        question: msgContent,
+        context: `Agent ${fromAgentName} requested human attention via @human mention`,
+        createdAt: new Date().toISOString(),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 // --- Task updates ---
@@ -1527,6 +1942,51 @@ viadpEngine.on('checkpoint:failed', (delegationId, checkpoint) => {
 // --- VIADP audit events ---
 viadpEngine.on('audit:entry', (entry) => {
   io.emit('viadp_update', { type: 'audit_entry', data: entry });
+});
+
+// --- Workflow events ---
+workflowExecutor.on('workflow:started', (instance) => {
+  io.emit('workflow_update', { type: 'started', instanceId: instance.id, workflowName: instance.workflowName });
+});
+
+workflowExecutor.on('workflow:completed', (instance) => {
+  io.emit('workflow_update', { type: 'completed', instanceId: instance.id, workflowName: instance.workflowName });
+});
+
+workflowExecutor.on('workflow:failed', (instance, error) => {
+  io.emit('workflow_update', { type: 'failed', instanceId: instance.id, workflowName: instance.workflowName, error });
+});
+
+workflowExecutor.on('workflow:phase-changed', (instance, phase) => {
+  io.emit('workflow_update', { type: 'phase_changed', instanceId: instance.id, phaseName: phase.name, displayName: phase.displayName });
+});
+
+workflowExecutor.on('workflow:step-completed', (instance, stepInfo) => {
+  io.emit('workflow_update', { type: 'step_completed', instanceId: instance.id, phaseName: stepInfo.phaseName, stepName: stepInfo.stepName });
+});
+
+workflowExecutor.on('workflow:waiting-approval', (instance, approval) => {
+  io.emit('approval_requested', { instanceId: instance.id, approval });
+});
+
+workflowExecutor.on('workflow:progress', (instanceId, progress) => {
+  io.emit('workflow_progress', { instanceId, progress });
+});
+
+// --- Cost alert events ---
+modelRouter.on('cost:alert', (alertData) => {
+  const msgType = alertData.alertType === 'exceeded' ? 'cost.cap_exceeded' : 'cost.alert';
+  io.emit(msgType, {
+    type: msgType,
+    payload: alertData,
+    timestamp: new Date().toISOString(),
+  });
+  gatewayServer.broadcastToDashboards({
+    type: msgType,
+    payload: alertData,
+    timestamp: new Date().toISOString(),
+    sessionId: '',
+  });
 });
 
 console.log('[Init] Socket.IO server wired to manager events');

@@ -13,7 +13,8 @@
     "viadpAudit": "تدقيق التفويض",
     "settings": "الإعدادات",
     "conversation": "المحادثة",
-    "voiceTranscripts": "نصوص الصوت"
+    "voiceTranscripts": "نصوص الصوت",
+    "escalations": "التصعيدات"
   },
   "stats": {
     "activeTasks": "المهام النشطة",
@@ -92,7 +93,13 @@
     "deploy": "النشر",
     "complete": "مكتمل",
     "active": "نشط",
-    "pending": "قيد الانتظار"
+    "pending": "قيد الانتظار",
+    "pauseAll": "إيقاف الكل",
+    "resumeAll": "استئناف الكل",
+    "paused": "متوقف",
+    "resumed": "مستأنف",
+    "pause": "إيقاف",
+    "resume": "استئناف"
   },
   "cost": {
     "title": "النماذج والتكلفة",
@@ -220,6 +227,42 @@
     "noTranscripts": "لا توجد نصوص",
     "sttLabel": "المستخدم \u2192 النظام",
     "ttsLabel": "النظام \u2192 المستخدم"
+  },
+  "interrupt": {
+    "title": "الموافقات المعلقة",
+    "approvalGate": "بوابة الموافقة",
+    "humanMention": "إشارة @إنسان",
+    "confidenceLow": "ثقة منخفضة",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "feedbackPlaceholder": "سبب الرفض...",
+    "noInterrupts": "لا توجد موافقات معلقة",
+    "newInterrupt": "طلب موافقة جديد من",
+    "approved": "تمت الموافقة",
+    "rejected": "تم الرفض",
+    "pendingCount": "موافقات معلقة"
+  },
+  "escalation": {
+    "title": "قائمة التصعيد",
+    "badge": "يحتاج مراجعة",
+    "pending": "معلق",
+    "reviewed": "تمت المراجعة",
+    "dismissed": "تم الرفض",
+    "confidence": "الثقة",
+    "reason": "السبب",
+    "review": "مراجعة",
+    "dismiss": "رفض",
+    "feedbackPlaceholder": "ملاحظاتك...",
+    "noEscalations": "لا توجد تصعيدات",
+    "threshold": "حد التصعيد التلقائي: ٨٥٪"
+  },
+  "takeover": {
+    "takeOver": "السيطرة",
+    "release": "إطلاق السيطرة",
+    "controlling": "أنت تتحكم في",
+    "messagePlaceholder": "اكتب كهذا الوكيل...",
+    "send": "إرسال كوكيل",
+    "humanControlled": "تحكم بشري"
   },
   "partyMode": {
     "title": "وضع الحفلة",

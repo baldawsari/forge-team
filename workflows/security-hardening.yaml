@@ -1,0 +1,136 @@
+name: Security Hardening
+version: "1.0"
+description: Comprehensive security hardening workflow covering network, application, and data protection layers
+
+phases:
+  - name: security_assessment
+    display_name: "Security Assessment"
+    display_name_ar: "تقييم الأمان"
+    agents: [security-specialist, architect]
+    steps:
+      - name: vulnerability_assessment
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: assess_security_posture
+        outputs: [vulnerability_report, risk_matrix, compliance_gaps]
+        approval_required: true
+      - name: architecture_review
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_security_architecture
+        outputs: [architecture_findings, attack_surface_analysis, trust_boundaries]
+        parallel: true
+      - name: prioritize_risks
+        agent: security-specialist
+        action: prioritize_remediation
+        inputs: [vulnerability_report, architecture_findings]
+        outputs: [remediation_priority_list, hardening_roadmap]
+        depends_on: [vulnerability_assessment, architecture_review]
+    checkpoint: true
+
+  - name: network_hardening
+    display_name: "Network Hardening"
+    display_name_ar: "تأمين الشبكة"
+    agents: [devops-engineer, security-specialist]
+    steps:
+      - name: harden_network
+        agent: devops-engineer
+        action: apply_network_hardening
+        inputs: [hardening_roadmap, attack_surface_analysis]
+        outputs: [firewall_rules, network_segmentation, tls_config]
+      - name: configure_waf
+        agent: devops-engineer
+        action: configure_waf_rules
+        inputs: [vulnerability_report, firewall_rules]
+        outputs: [waf_config, rate_limiting_rules, ip_filtering]
+        depends_on: [harden_network]
+      - name: verify_network
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: verify_network_hardening
+        inputs: [firewall_rules, waf_config, tls_config]
+        outputs: [network_audit_results, network_compliance_report]
+        depends_on: [configure_waf]
+    checkpoint: true
+
+  - name: application_hardening
+    display_name: "Application Hardening"
+    display_name_ar: "تأمين التطبيق"
+    agents: [security-specialist, backend-dev]
+    steps:
+      - name: harden_authentication
+        agent: backend-dev
+        action: harden_auth_system
+        inputs: [hardening_roadmap, compliance_gaps]
+        outputs: [auth_hardening_changes, session_management_config, mfa_config]
+      - name: harden_input_validation
+        agent: backend-dev
+        action: harden_input_handling
+        inputs: [vulnerability_report, hardening_roadmap]
+        outputs: [input_validation_rules, sanitization_config, csp_headers]
+        parallel: true
+      - name: review_app_hardening
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: review_application_hardening
+        inputs: [auth_hardening_changes, input_validation_rules, csp_headers]
+        outputs: [app_hardening_review, remaining_vulnerabilities]
+        depends_on: [harden_authentication, harden_input_validation]
+    checkpoint: true
+
+  - name: data_protection
+    display_name: "Data Protection"
+    display_name_ar: "حماية البيانات"
+    agents: [security-specialist, architect]
+    steps:
+      - name: implement_encryption
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: implement_data_encryption
+        inputs: [hardening_roadmap, trust_boundaries]
+        outputs: [encryption_config, key_management_plan, data_classification]
+      - name: secure_data_access
+        agent: architect
+        action: design_data_access_controls
+        inputs: [data_classification, trust_boundaries]
+        outputs: [access_control_policies, audit_logging_config, data_retention_policy]
+        depends_on: [implement_encryption]
+      - name: backup_security
+        agent: security-specialist
+        action: secure_backup_systems
+        inputs: [encryption_config, data_retention_policy]
+        outputs: [backup_encryption_config, recovery_procedures, backup_audit]
+        depends_on: [secure_data_access]
+    checkpoint: true
+
+  - name: verification
+    display_name: "Verification & Compliance"
+    display_name_ar: "التحقق والامتثال"
+    agents: [security-specialist, qa-architect]
+    steps:
+      - name: run_security_scans
+        agent: qa-architect
+        action: run_security_test_suite
+        inputs: [auth_hardening_changes, encryption_config, waf_config]
+        outputs: [security_test_results, regression_report]
+      - name: compliance_verification
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: verify_compliance
+        inputs: [security_test_results, compliance_gaps]
+        outputs: [compliance_report, certification_readiness]
+        depends_on: [run_security_scans]
+      - name: final_signoff
+        agent: security-specialist
+        action: security_hardening_signoff
+        inputs: [compliance_report, security_test_results]
+        outputs: [hardening_report, security_baseline, monitoring_recommendations]
+        depends_on: [compliance_verification]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  security_assessment -> network_hardening: requires_approval
+  network_hardening -> application_hardening: auto
+  application_hardening -> data_protection: auto
+  data_protection -> verification: auto

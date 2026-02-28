@@ -1,0 +1,107 @@
+name: CI/CD Pipeline Setup
+version: "1.0"
+description: Design and implementation of continuous integration and delivery pipeline
+
+phases:
+  - name: pipeline_design
+    display_name: "Pipeline Design"
+    display_name_ar: "تصميم خط الأنابيب"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: assess_requirements
+        agent: devops-engineer
+        action: gather_pipeline_requirements
+        outputs: [requirements_doc, tool_inventory]
+      - name: design_pipeline_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_pipeline_flow
+        outputs: [pipeline_diagram, stage_definitions, branching_strategy]
+    checkpoint: true
+
+  - name: build_configuration
+    display_name: "Build Configuration"
+    display_name_ar: "إعداد البناء"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: configure_build_system
+        agent: devops-engineer
+        action: setup_build_tools
+        outputs: [build_config, dependency_cache_config]
+      - name: create_build_scripts
+        agent: backend-dev
+        action: write_build_scripts
+        outputs: [build_scripts, artifact_specs]
+        parallel: true
+      - name: validate_builds
+        agent: devops-engineer
+        action: test_build_pipeline
+        depends_on: [configure_build_system, create_build_scripts]
+        outputs: [build_results, build_timing]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+  - name: test_integration
+    display_name: "Test Integration"
+    display_name_ar: "تكامل الاختبارات"
+    agents: [qa-architect, devops-engineer]
+    steps:
+      - name: setup_test_stages
+        agent: qa-architect
+        action: configure_test_stages
+        outputs: [test_stage_config, coverage_thresholds]
+      - name: integrate_test_tools
+        agent: devops-engineer
+        action: integrate_testing_tools
+        outputs: [tool_integration_config, reporting_setup]
+        parallel: true
+      - name: validate_test_pipeline
+        agent: qa-architect
+        action: run_pipeline_tests
+        depends_on: [setup_test_stages, integrate_test_tools]
+        outputs: [test_results, pipeline_report]
+    checkpoint: true
+
+  - name: deploy_stages
+    display_name: "Deployment Stages"
+    display_name_ar: "مراحل النشر"
+    agents: [devops-engineer]
+    steps:
+      - name: configure_staging
+        agent: devops-engineer
+        action: setup_staging_environment
+        outputs: [staging_config, env_variables]
+      - name: configure_production
+        agent: devops-engineer
+        action: setup_production_deployment
+        outputs: [production_config, rollback_procedures]
+        approval_required: true
+      - name: setup_promotion_gates
+        agent: devops-engineer
+        action: configure_quality_gates
+        depends_on: [configure_staging, configure_production]
+        outputs: [gate_config, promotion_rules]
+    checkpoint: true
+
+  - name: validation
+    display_name: "Validation"
+    display_name_ar: "التحقق والمصادقة"
+    agents: [devops-engineer, qa-architect]
+    steps:
+      - name: end_to_end_test
+        agent: devops-engineer
+        action: run_full_pipeline
+        outputs: [pipeline_run_report, timing_metrics]
+        model_override: gemini-flash-3
+      - name: review_pipeline
+        agent: qa-architect
+        action: audit_pipeline_quality
+        outputs: [quality_report, improvement_suggestions]
+        parallel: true
+    checkpoint: true
+
+transitions:
+  pipeline_design -> build_configuration: auto
+  build_configuration -> test_integration: auto
+  test_integration -> deploy_stages: requires_approval
+  deploy_stages -> validation: auto

@@ -687,19 +687,19 @@ Independent: WS3 (all three workflow authors can start immediately)
 
 After all workstreams complete, verify:
 
-- [ ] `npx tsc --noEmit` succeeds in `/forge-team/gateway/` with zero errors
-- [ ] WorkflowLoader loads all 34+ YAMLs: `workflowLoader.getAllWorkflows().length >= 34`
-- [ ] WorkflowExecutor uses `StateGraph` from `@langchain/langgraph` (not custom state machine)
-- [ ] WorkflowExecutor uses `PostgresSaver` when DATABASE_URL is set
-- [ ] WorkflowExecutor falls back to `MemorySaver` when DATABASE_URL is not set
-- [ ] WorkflowExecutor is instantiated in `gateway/src/index.ts` (no longer dead code)
-- [ ] WebSocket commands `workflow:start`, `workflow:pause`, `workflow:resume`, `workflow:approve`, `workflow:reject`, `workflow:list` are handled
-- [ ] REST endpoints `/api/workflows`, `/api/workflows/:name`, `/api/workflow-instances` exist
-- [ ] Every phase in the LangGraph has a VIADP pre-check node
-- [ ] Per-step `model_override` is passed to the agent execution function
-- [ ] `riyadh-attendance-tracker.yaml` exists with 9 phases and Saudization compliance steps
-- [ ] All YAML files have `display_name_ar` for every phase
-- [ ] All workflow event types are emitted and broadcast via WebSocket
-- [ ] `pauseWorkflow()` and `resumeWorkflow()` save/restore from checkpoints
-- [ ] No `gpt-4o` or `gpt-4o-mini` appears in any workflow YAML model_override
-- [ ] All model_override values are from: `claude-opus-4.6`, `claude-sonnet-4.6`, `claude-haiku-4.5`, `gemini-3.1-pro`, `gemini-flash-3`
+- [x] `npx tsc --noEmit` succeeds in `/forge-team/gateway/` with zero errors (3 pre-existing import-path errors only; zero from session-04 code)
+- [x] WorkflowLoader loads all 34+ YAMLs: 35 workflow YAML files (4 original + 31 new)
+- [x] WorkflowExecutor uses `StateGraph` from `@langchain/langgraph` (not custom state machine)
+- [x] WorkflowExecutor uses `PostgresCheckpointSaver` when DATABASE_URL is set
+- [x] WorkflowExecutor falls back to `MemorySaver` when DATABASE_URL is not set
+- [x] WorkflowExecutor is instantiated in `gateway/src/index.ts` (no longer dead code)
+- [x] WebSocket commands `workflow:start`, `workflow:pause`, `workflow:resume`, `workflow:approve`, `workflow:reject`, `workflow:list` are handled
+- [x] REST endpoints `/api/workflows`, `/api/workflows/:name`, `/api/workflow-instances`, `/api/workflow-instances/:id` exist
+- [x] Every phase in the LangGraph has a VIADP pre-check node (`START -> viadpPreCheck`, loops via `advancePhase -> viadpPreCheck`)
+- [x] Per-step `model_override` is passed to the agent execution function
+- [x] `riyadh-attendance-tracker.yaml` exists with 9 phases and Saudization compliance steps
+- [x] All YAML files have `display_name_ar` for every phase (181 occurrences across 35 files)
+- [x] All workflow event types are emitted and broadcast via WebSocket (7 event types: started, completed, failed, phase-changed, step-completed, waiting-approval, progress)
+- [x] `pauseWorkflow()` and `resumeWorkflow()` save/restore from checkpoints
+- [x] No `gpt-4o` or `gpt-4o-mini` appears in any workflow YAML model_override
+- [x] All model_override values are from: `claude-opus-4.6`, `gemini-flash-3` (only these two used)

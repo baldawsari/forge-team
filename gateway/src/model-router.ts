@@ -11,6 +11,7 @@
  */
 
 import { v4 as uuid } from 'uuid';
+import { EventEmitter } from 'eventemitter3';
 import type {
   AgentId,
   ModelProvider,
@@ -25,6 +26,21 @@ import type {
   AnthropicModel,
   GoogleModel,
 } from '@forge-team/shared';
+
+interface CostCap {
+  dailyCapUsd: number;
+  weeklyCapUsd: number;
+  alertThreshold: number;
+}
+
+interface CostCapStatus {
+  allowed: boolean;
+  dailyUsed: number;
+  dailyCap: number;
+  weeklyUsed: number;
+  weeklyCap: number;
+  alertTriggered: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Model catalog
@@ -211,12 +227,32 @@ const FAST_KEYWORDS = [
 // ModelRouter class
 // ---------------------------------------------------------------------------
 
-export class ModelRouter {
+export class ModelRouter extends EventEmitter {
   private costRecords: CostRecord[] = [];
   private assignments: Record<AgentId, AgentModelAssignment>;
+  private costCaps: Map<string, CostCap> = new Map();
 
   constructor() {
+    super();
     this.assignments = { ...AGENT_MODEL_ASSIGNMENTS };
+
+    const defaultCaps: Record<string, CostCap> = {
+      'bmad-master': { dailyCapUsd: 30, weeklyCapUsd: 150, alertThreshold: 0.8 },
+      'product-owner': { dailyCapUsd: 20, weeklyCapUsd: 100, alertThreshold: 0.8 },
+      'business-analyst': { dailyCapUsd: 20, weeklyCapUsd: 100, alertThreshold: 0.8 },
+      'scrum-master': { dailyCapUsd: 5, weeklyCapUsd: 25, alertThreshold: 0.8 },
+      'architect': { dailyCapUsd: 50, weeklyCapUsd: 250, alertThreshold: 0.8 },
+      'ux-designer': { dailyCapUsd: 15, weeklyCapUsd: 75, alertThreshold: 0.8 },
+      'frontend-dev': { dailyCapUsd: 30, weeklyCapUsd: 150, alertThreshold: 0.8 },
+      'backend-dev': { dailyCapUsd: 50, weeklyCapUsd: 250, alertThreshold: 0.8 },
+      'qa-architect': { dailyCapUsd: 40, weeklyCapUsd: 200, alertThreshold: 0.8 },
+      'devops-engineer': { dailyCapUsd: 20, weeklyCapUsd: 100, alertThreshold: 0.8 },
+      'security-specialist': { dailyCapUsd: 40, weeklyCapUsd: 200, alertThreshold: 0.8 },
+      'tech-writer': { dailyCapUsd: 15, weeklyCapUsd: 75, alertThreshold: 0.8 },
+    };
+    for (const [agentId, cap] of Object.entries(defaultCaps)) {
+      this.costCaps.set(agentId, cap);
+    }
   }
 
   /**
@@ -297,6 +333,19 @@ export class ModelRouter {
     const assignment = this.assignments[request.agentId];
     if (!assignment) {
       throw new Error(`No model assignment found for agent: ${request.agentId}`);
+    }
+
+    const capStatus = this.checkCostCap(request.agentId);
+    if (!capStatus.allowed) {
+      const cheapest = Object.values(MODEL_CATALOG).sort((a, b) => a.inputCostPer1M - b.inputCostPer1M)[0];
+      return {
+        model: cheapest,
+        reason: 'cost-cap-exceeded' as any,
+        estimatedCost: this.estimateCost(cheapest),
+        classifiedTier: 'fast',
+        alertTriggered: true,
+        capStatus,
+      } as any;
     }
 
     const classifiedTier = request.tierOverride ?? this.classifyComplexity(request.taskContent);
@@ -419,6 +468,33 @@ export class ModelRouter {
     };
 
     this.costRecords.push(record);
+
+    // Fire-and-forget DB persistence
+    import('./db.js').then(({ query }) => {
+      query(
+        `INSERT INTO cost_tracking (id, agent_id, session_id, task_id, model_used, provider, tokens_in, tokens_out, cost_usd, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [record.id, agentId, sessionId, taskId, model, modelConfig.provider, inputTokens, outputTokens, cost, record.timestamp]
+      ).catch((err: any) => {
+        console.warn('[ModelRouter] Failed to persist cost record:', err?.message);
+      });
+    }).catch(() => {});
+
+    const capCheck = this.checkCostCap(agentId);
+    if (capCheck.alertTriggered) {
+      this.emit('cost:alert', {
+        agentId,
+        alertType: capCheck.allowed ? 'threshold' : 'exceeded',
+        message: capCheck.allowed
+          ? `Agent ${agentId} has used ${Math.round((capCheck.dailyUsed / capCheck.dailyCap) * 100)}% of daily budget ($${capCheck.dailyUsed.toFixed(2)} / $${capCheck.dailyCap.toFixed(2)})`
+          : `Agent ${agentId} daily budget exceeded ($${capCheck.dailyUsed.toFixed(2)} / $${capCheck.dailyCap.toFixed(2)})`,
+        dailyUsed: capCheck.dailyUsed,
+        dailyCap: capCheck.dailyCap,
+        weeklyUsed: capCheck.weeklyUsed,
+        weeklyCap: capCheck.weeklyCap,
+      });
+    }
+
     return record;
   }
 
@@ -491,10 +567,86 @@ export class ModelRouter {
     return records;
   }
 
-  /**
-   * Estimates cost for a single request to a given model.
-   * Uses average token counts: 1000 input, 500 output.
-   */
+  setCostCap(agentId: string, cap: CostCap): void {
+    this.costCaps.set(agentId, cap);
+  }
+
+  getCostCap(agentId: string): CostCap | undefined {
+    return this.costCaps.get(agentId);
+  }
+
+  getAgentDailyCost(agentId: string): number {
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    return this.costRecords
+      .filter((r) => r.agentId === agentId && new Date(r.timestamp).getTime() >= startOfDay.getTime())
+      .reduce((sum, r) => sum + r.cost, 0);
+  }
+
+  getAgentWeeklyCost(agentId: string): number {
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const startOfWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday));
+    return this.costRecords
+      .filter((r) => r.agentId === agentId && new Date(r.timestamp).getTime() >= startOfWeek.getTime())
+      .reduce((sum, r) => sum + r.cost, 0);
+  }
+
+  checkCostCap(agentId: string): CostCapStatus {
+    const cap = this.costCaps.get(agentId);
+    if (!cap) {
+      return { allowed: true, dailyUsed: 0, dailyCap: 50, weeklyUsed: 0, weeklyCap: 200, alertTriggered: false };
+    }
+    const dailyUsed = this.getAgentDailyCost(agentId);
+    const weeklyUsed = this.getAgentWeeklyCost(agentId);
+    const dailyRatio = dailyUsed / cap.dailyCapUsd;
+    const weeklyRatio = weeklyUsed / cap.weeklyCapUsd;
+    const allowed = dailyUsed < cap.dailyCapUsd && weeklyUsed < cap.weeklyCapUsd;
+    const alertTriggered = dailyRatio >= cap.alertThreshold || weeklyRatio >= cap.alertThreshold;
+    return {
+      allowed,
+      dailyUsed,
+      dailyCap: cap.dailyCapUsd,
+      weeklyUsed,
+      weeklyCap: cap.weeklyCapUsd,
+      alertTriggered,
+    };
+  }
+
+  async loadRecentCosts(): Promise<void> {
+    try {
+      const { query } = await import('./db.js');
+      const now = new Date();
+      const dayOfWeek = now.getUTCDay();
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const startOfWeek = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday));
+      const result = await query(
+        `SELECT id, agent_id, session_id, task_id, model_used, provider, tokens_in, tokens_out, cost_usd, timestamp
+         FROM cost_tracking WHERE timestamp >= $1 ORDER BY timestamp ASC`,
+        [startOfWeek.toISOString()]
+      );
+      for (const row of result.rows) {
+        this.costRecords.push({
+          id: row.id,
+          agentId: row.agent_id,
+          sessionId: row.session_id,
+          taskId: row.task_id,
+          model: row.model_used,
+          provider: row.provider,
+          inputTokens: row.tokens_in,
+          outputTokens: row.tokens_out,
+          cost: row.cost_usd,
+          timestamp: new Date(row.timestamp).toISOString(),
+          tier: 'balanced',
+        });
+      }
+      console.log(`[ModelRouter] Loaded ${result.rows.length} recent cost records from DB`);
+    } catch (err: any) {
+      console.warn('[ModelRouter] Failed to load recent costs from DB:', err?.message);
+    }
+  }
+
   private estimateCost(model: ModelConfig): number {
     return (
       (1000 / 1_000_000) * model.inputCostPer1M +

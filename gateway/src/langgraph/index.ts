@@ -12,10 +12,12 @@ export {
   advancePhase,
   handleError,
   checkTransition,
+  viadpPreCheck,
   routeAfterStep,
   routeAfterTransition,
   routeAfterAdvance,
   routeAfterError,
   routeAfterApproval,
+  routeAfterViadp,
 } from './nodes';
 export type { NodeDeps } from './nodes';

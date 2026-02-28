@@ -1,0 +1,110 @@
+name: Regulatory Compliance Check
+version: "1.0"
+description: Regulatory compliance assessment covering data privacy, policy adherence, and gap analysis
+
+phases:
+  - name: scope_definition
+    display_name: "Scope Definition"
+    display_name_ar: "تحديد النطاق"
+    agents: [security-specialist, business-analyst]
+    steps:
+      - name: identify_regulations
+        agent: security-specialist
+        action: identify_applicable_regulations
+        outputs: [regulation_list, jurisdiction_map]
+      - name: define_compliance_scope
+        agent: business-analyst
+        action: map_business_processes
+        outputs: [process_inventory, data_flow_map]
+        parallel: true
+      - name: establish_framework
+        agent: security-specialist
+        action: select_compliance_framework
+        depends_on: [identify_regulations, define_compliance_scope]
+        outputs: [framework_selection, control_objectives]
+    checkpoint: true
+
+  - name: data_audit
+    display_name: "Data Audit"
+    display_name_ar: "تدقيق البيانات"
+    agents: [security-specialist, backend-dev]
+    steps:
+      - name: data_inventory
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: catalog_sensitive_data
+        outputs: [data_inventory, classification_report]
+      - name: access_review
+        agent: security-specialist
+        action: audit_data_access_controls
+        outputs: [access_matrix, permission_audit]
+        parallel: true
+      - name: data_flow_analysis
+        agent: backend-dev
+        action: trace_data_flows
+        outputs: [data_flow_diagram, third_party_transfers]
+        parallel: true
+    checkpoint: true
+
+  - name: policy_review
+    display_name: "Policy Review"
+    display_name_ar: "مراجعة السياسات"
+    agents: [security-specialist, business-analyst]
+    steps:
+      - name: review_existing_policies
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: audit_current_policies
+        outputs: [policy_assessment, outdated_policies]
+      - name: benchmark_against_standards
+        agent: business-analyst
+        action: compare_industry_standards
+        outputs: [benchmark_report, best_practices]
+        parallel: true
+    checkpoint: true
+
+  - name: gap_analysis
+    display_name: "Gap Analysis"
+    display_name_ar: "تحليل الفجوات"
+    agents: [security-specialist, business-analyst]
+    steps:
+      - name: identify_gaps
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: perform_gap_analysis
+        outputs: [gap_report, risk_ratings]
+      - name: prioritize_remediation
+        agent: business-analyst
+        action: prioritize_compliance_gaps
+        depends_on: [identify_gaps]
+        outputs: [remediation_priority, effort_estimates]
+      - name: create_action_plan
+        agent: security-specialist
+        action: develop_remediation_plan
+        depends_on: [prioritize_remediation]
+        outputs: [action_plan, timeline, resource_requirements]
+        approval_required: true
+    checkpoint: true
+
+  - name: compliance_report
+    display_name: "Compliance Report"
+    display_name_ar: "تقرير الامتثال"
+    agents: [tech-writer, security-specialist]
+    steps:
+      - name: draft_report
+        agent: tech-writer
+        action: write_compliance_report
+        outputs: [compliance_report, executive_summary]
+      - name: review_report
+        agent: security-specialist
+        action: validate_compliance_findings
+        depends_on: [draft_report]
+        outputs: [validated_report, sign_off_status]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  scope_definition -> data_audit: auto
+  data_audit -> policy_review: auto
+  policy_review -> gap_analysis: requires_approval
+  gap_analysis -> compliance_report: auto

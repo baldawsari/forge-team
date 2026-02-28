@@ -349,3 +349,93 @@ export async function storeMemory(
 ): Promise<{ entry: any }> {
   return postAPI<{ entry: any }>('/api/memory/store', { scope, content, ...options });
 }
+
+// --- Interrupt API (Phase 8 WS1) ---
+
+export interface Interrupt {
+  id: string;
+  instanceId: string;
+  agentId: string;
+  agentName: string;
+  stepId: string;
+  type: 'approval_gate' | 'human_mention' | 'confidence_low';
+  question: string;
+  context?: string;
+  confidence?: number;
+  createdAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+export async function fetchPendingInterrupts(): Promise<{ interrupts: Interrupt[] }> {
+  return fetchAPI('/api/interrupts');
+}
+
+export async function resolveInterrupt(interruptId: string, approved: boolean, feedback?: string): Promise<void> {
+  await postAPI(`/api/interrupts/${interruptId}/resolve`, { approved, feedback });
+}
+
+// --- Workflow control API (Phase 8 WS2) ---
+
+export async function pauseAllWorkflows(): Promise<{ paused: string[] }> {
+  return postAPI('/api/workflows/pause-all', {});
+}
+
+export async function resumeAllWorkflows(): Promise<{ resumed: string[] }> {
+  return postAPI('/api/workflows/resume-all', {});
+}
+
+export async function pauseWorkflow(instanceId: string): Promise<void> {
+  await postAPI(`/api/workflows/${instanceId}/pause`, {});
+}
+
+export async function resumeWorkflow(instanceId: string): Promise<void> {
+  await postAPI(`/api/workflows/${instanceId}/resume`, {});
+}
+
+export async function fetchWorkflowStatuses(): Promise<{
+  workflows: Array<{ id: string; label: string; status: string; progress: number }>;
+}> {
+  return fetchAPI('/api/workflows/status');
+}
+
+// --- Escalation API (Phase 8 WS3) ---
+
+export interface Escalation {
+  id: string;
+  agentId: string;
+  agentName: string;
+  taskId: string;
+  taskTitle: string;
+  confidence: number;
+  reason: string;
+  agentResponse: string;
+  createdAt: string;
+  status: 'pending' | 'reviewed' | 'dismissed';
+}
+
+export async function fetchEscalations(status?: string): Promise<{ escalations: Escalation[] }> {
+  const query = status ? `?status=${status}` : '';
+  return fetchAPI(`/api/escalations${query}`);
+}
+
+export async function reviewEscalation(id: string, feedback?: string): Promise<void> {
+  await postAPI(`/api/escalations/${id}/review`, { feedback });
+}
+
+export async function dismissEscalation(id: string): Promise<void> {
+  await postAPI(`/api/escalations/${id}/dismiss`, {});
+}
+
+// --- Takeover API (Phase 8 WS4) ---
+
+export async function takeOverAgent(agentId: string): Promise<void> {
+  await postAPI(`/api/agents/${agentId}/takeover`, {});
+}
+
+export async function releaseAgent(agentId: string): Promise<void> {
+  await postAPI(`/api/agents/${agentId}/release`, {});
+}
+
+export async function sendHumanMessage(agentId: string, content: string, taskId?: string): Promise<void> {
+  await postAPI(`/api/agents/${agentId}/human-message`, { content, taskId });
+}

@@ -1,0 +1,114 @@
+name: Incident Response
+version: "1.0"
+description: Structured incident response workflow from detection through postmortem analysis
+
+phases:
+  - name: detection
+    display_name: "Detection"
+    display_name_ar: "الكشف عن الحوادث"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: monitor_alerts
+        agent: devops-engineer
+        action: check_monitoring_alerts
+        outputs: [alert_summary, affected_services]
+        model_override: gemini-flash-3
+      - name: initial_assessment
+        agent: backend-dev
+        action: assess_service_health
+        outputs: [health_report, error_logs]
+        parallel: true
+    checkpoint: true
+
+  - name: triage
+    display_name: "Triage"
+    display_name_ar: "تصنيف الأولويات"
+    agents: [devops-engineer, security-specialist]
+    steps:
+      - name: severity_classification
+        agent: devops-engineer
+        action: classify_severity
+        outputs: [severity_level, impact_scope]
+      - name: threat_assessment
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: assess_threat_vector
+        outputs: [threat_analysis, attack_indicators]
+        parallel: true
+      - name: escalation_decision
+        agent: devops-engineer
+        action: determine_escalation
+        depends_on: [severity_classification, threat_assessment]
+        outputs: [escalation_plan, notification_list]
+    checkpoint: true
+
+  - name: mitigation
+    display_name: "Mitigation"
+    display_name_ar: "التخفيف والاحتواء"
+    agents: [devops-engineer, backend-dev, security-specialist]
+    steps:
+      - name: containment
+        agent: security-specialist
+        action: contain_incident
+        outputs: [containment_actions, isolation_report]
+      - name: apply_hotfix
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: develop_hotfix
+        outputs: [hotfix_code, rollback_plan]
+        parallel: true
+      - name: deploy_mitigation
+        agent: devops-engineer
+        action: deploy_fix
+        depends_on: [containment, apply_hotfix]
+        outputs: [deployment_status, service_health]
+        approval_required: true
+    checkpoint: true
+
+  - name: resolution
+    display_name: "Resolution"
+    display_name_ar: "الحل النهائي"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: verify_fix
+        agent: devops-engineer
+        action: verify_service_recovery
+        outputs: [recovery_status, metrics_baseline]
+        model_override: gemini-flash-3
+      - name: permanent_fix
+        agent: backend-dev
+        action: implement_permanent_solution
+        outputs: [solution_code, test_results]
+      - name: close_incident
+        agent: devops-engineer
+        action: close_incident_ticket
+        depends_on: [verify_fix, permanent_fix]
+        outputs: [incident_record, timeline]
+    checkpoint: true
+
+  - name: postmortem
+    display_name: "Postmortem"
+    display_name_ar: "تحليل ما بعد الحادث"
+    agents: [devops-engineer, security-specialist]
+    steps:
+      - name: root_cause_analysis
+        agent: devops-engineer
+        model_override: claude-opus-4.6
+        action: analyze_root_cause
+        outputs: [root_cause_report, contributing_factors]
+      - name: improvement_plan
+        agent: security-specialist
+        action: propose_preventive_measures
+        outputs: [action_items, process_improvements]
+      - name: postmortem_report
+        agent: devops-engineer
+        action: compile_postmortem
+        depends_on: [root_cause_analysis, improvement_plan]
+        outputs: [postmortem_document, lessons_learned]
+    checkpoint: true
+
+transitions:
+  detection -> triage: auto
+  triage -> mitigation: requires_approval
+  mitigation -> resolution: auto
+  resolution -> postmortem: auto

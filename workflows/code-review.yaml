@@ -1,0 +1,112 @@
+name: Code Review Pipeline
+version: "1.0"
+description: Structured code review process from scoping through final approval
+
+phases:
+  - name: scope_definition
+    display_name: "Scope Definition"
+    display_name_ar: "تحديد النطاق"
+    agents: [qa-architect, architect]
+    steps:
+      - name: identify_review_targets
+        agent: qa-architect
+        action: identify_review_scope
+        outputs: [review_scope, file_list, risk_areas]
+      - name: set_review_criteria
+        agent: architect
+        action: define_review_standards
+        outputs: [review_criteria, quality_gates]
+        parallel: true
+    checkpoint: true
+
+  - name: static_analysis
+    display_name: "Static Analysis"
+    display_name_ar: "التحليل الثابت"
+    agents: [qa-architect, security-specialist]
+    steps:
+      - name: run_linters
+        agent: qa-architect
+        model_override: gemini-flash-3
+        action: run_static_analysis
+        outputs: [lint_report, complexity_metrics]
+      - name: security_scan
+        agent: security-specialist
+        action: run_security_scan
+        outputs: [vulnerability_report, dependency_audit]
+        parallel: true
+      - name: consolidate_findings
+        agent: qa-architect
+        action: merge_analysis_results
+        inputs: [lint_report, vulnerability_report]
+        outputs: [consolidated_analysis_report]
+        depends_on: [run_linters, security_scan]
+    checkpoint: true
+
+  - name: peer_review
+    display_name: "Peer Review"
+    display_name_ar: "مراجعة الأقران"
+    agents: [architect, backend-dev, security-specialist]
+    steps:
+      - name: architecture_review
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_architecture_patterns
+        inputs: [consolidated_analysis_report]
+        outputs: [architecture_feedback, design_issues]
+      - name: implementation_review
+        agent: backend-dev
+        action: review_implementation
+        inputs: [consolidated_analysis_report]
+        outputs: [implementation_feedback, code_smells]
+        parallel: true
+      - name: security_review
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: review_security_patterns
+        inputs: [consolidated_analysis_report]
+        outputs: [security_feedback, threat_findings]
+        parallel: true
+    checkpoint: true
+
+  - name: feedback_resolution
+    display_name: "Feedback Resolution"
+    display_name_ar: "حل الملاحظات"
+    agents: [backend-dev, qa-architect]
+    steps:
+      - name: apply_fixes
+        agent: backend-dev
+        action: resolve_review_feedback
+        inputs: [architecture_feedback, implementation_feedback, security_feedback]
+        outputs: [resolved_code, change_summary]
+      - name: verify_fixes
+        agent: qa-architect
+        action: verify_resolutions
+        inputs: [resolved_code]
+        outputs: [verification_report]
+        depends_on: [apply_fixes]
+    checkpoint: true
+
+  - name: final_approval
+    display_name: "Final Approval"
+    display_name_ar: "الموافقة النهائية"
+    agents: [architect, qa-architect]
+    steps:
+      - name: final_quality_check
+        agent: qa-architect
+        action: run_final_checks
+        inputs: [verification_report]
+        outputs: [final_quality_report]
+      - name: approve_merge
+        agent: architect
+        action: approve_code_merge
+        inputs: [final_quality_report]
+        outputs: [approval_decision, merge_record]
+        approval_required: true
+        depends_on: [final_quality_check]
+    checkpoint: true
+
+transitions:
+  scope_definition -> static_analysis: auto
+  static_analysis -> peer_review: auto
+  peer_review -> feedback_resolution: auto
+  feedback_resolution -> final_approval: requires_approval

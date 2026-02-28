@@ -1,0 +1,96 @@
+name: Emergency Hotfix
+version: "1.0"
+description: Rapid hotfix pipeline for critical production issues
+
+phases:
+  - name: triage
+    display_name: "Triage"
+    display_name_ar: "الفرز والتقييم"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: assess_severity
+        agent: backend-dev
+        model_override: gemini-flash-3
+        action: assess_incident_severity
+        outputs: [severity_level, affected_systems]
+      - name: check_production_status
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: check_system_health
+        outputs: [health_report, error_logs]
+        parallel: true
+    checkpoint: true
+
+  - name: fix_development
+    display_name: "Fix Development"
+    display_name_ar: "تطوير الإصلاح"
+    agents: [backend-dev]
+    steps:
+      - name: root_cause_analysis
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: analyze_root_cause
+        inputs: [error_logs, affected_systems]
+        outputs: [root_cause_report, fix_approach]
+      - name: implement_fix
+        agent: backend-dev
+        action: implement_hotfix
+        inputs: [fix_approach]
+        outputs: [hotfix_code, hotfix_branch]
+        depends_on: [root_cause_analysis]
+    checkpoint: true
+
+  - name: rapid_testing
+    display_name: "Rapid Testing"
+    display_name_ar: "الاختبار السريع"
+    agents: [qa-architect]
+    steps:
+      - name: smoke_test
+        agent: qa-architect
+        action: run_smoke_tests
+        inputs: [hotfix_code]
+        outputs: [smoke_test_results]
+      - name: regression_check
+        agent: qa-architect
+        action: run_critical_regression
+        inputs: [hotfix_code]
+        outputs: [regression_results]
+        depends_on: [smoke_test]
+    checkpoint: true
+
+  - name: emergency_deploy
+    display_name: "Emergency Deploy"
+    display_name_ar: "النشر الطارئ"
+    agents: [devops-engineer]
+    steps:
+      - name: deploy_hotfix
+        agent: devops-engineer
+        action: deploy_to_production
+        inputs: [hotfix_branch, regression_results]
+        outputs: [deployment_status, rollback_plan]
+        approval_required: true
+    checkpoint: true
+
+  - name: post_deploy_verification
+    display_name: "Post-Deploy Verification"
+    display_name_ar: "التحقق بعد النشر"
+    agents: [devops-engineer, qa-architect]
+    steps:
+      - name: health_check
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: verify_deployment_health
+        outputs: [post_deploy_health, metrics_snapshot]
+      - name: incident_report
+        agent: qa-architect
+        action: generate_incident_report
+        inputs: [root_cause_report, deployment_status]
+        outputs: [incident_report, lessons_learned]
+        depends_on: [health_check]
+    checkpoint: true
+
+transitions:
+  triage -> fix_development: auto
+  fix_development -> rapid_testing: auto
+  rapid_testing -> emergency_deploy: requires_approval
+  emergency_deploy -> post_deploy_verification: auto

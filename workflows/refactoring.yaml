@@ -1,0 +1,110 @@
+name: Code Refactoring
+version: "1.0"
+description: Structured code refactoring from analysis through execution, testing, and review
+
+phases:
+  - name: code_analysis
+    display_name: "Code Analysis"
+    display_name_ar: "تحليل الشيفرة"
+    agents: [architect, qa-architect]
+    steps:
+      - name: analyze_code_quality
+        agent: qa-architect
+        action: run_code_quality_analysis
+        outputs: [quality_metrics, complexity_report, duplication_report]
+      - name: identify_refactoring_targets
+        agent: architect
+        model_override: claude-opus-4.6
+        action: identify_refactoring_candidates
+        inputs: [quality_metrics, complexity_report]
+        outputs: [refactoring_targets, dependency_graph, impact_assessment]
+        depends_on: [analyze_code_quality]
+    checkpoint: true
+
+  - name: refactoring_plan
+    display_name: "Refactoring Plan"
+    display_name_ar: "خطة إعادة الهيكلة"
+    agents: [architect, backend-dev]
+    steps:
+      - name: design_refactoring_approach
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_refactoring_strategy
+        inputs: [refactoring_targets, dependency_graph]
+        outputs: [refactoring_strategy, pattern_changes, breaking_changes]
+      - name: plan_incremental_steps
+        agent: backend-dev
+        action: create_step_by_step_plan
+        inputs: [refactoring_strategy, impact_assessment]
+        outputs: [incremental_plan, safety_checkpoints]
+        depends_on: [design_refactoring_approach]
+    checkpoint: true
+
+  - name: refactoring_execution
+    display_name: "Refactoring Execution"
+    display_name_ar: "تنفيذ إعادة الهيكلة"
+    agents: [backend-dev, frontend-dev]
+    steps:
+      - name: refactor_backend
+        agent: backend-dev
+        action: execute_backend_refactoring
+        inputs: [incremental_plan, pattern_changes]
+        outputs: [refactored_backend_code, change_log]
+      - name: refactor_frontend
+        agent: frontend-dev
+        action: execute_frontend_refactoring
+        inputs: [incremental_plan, breaking_changes]
+        outputs: [refactored_frontend_code, ui_change_log]
+        parallel: true
+    checkpoint: true
+
+  - name: regression_testing
+    display_name: "Regression Testing"
+    display_name_ar: "اختبار الانحدار"
+    agents: [qa-architect]
+    steps:
+      - name: run_unit_tests
+        agent: qa-architect
+        action: run_unit_test_suite
+        inputs: [refactored_backend_code, refactored_frontend_code]
+        outputs: [unit_test_results, coverage_delta]
+      - name: run_integration_tests
+        agent: qa-architect
+        action: run_integration_tests
+        inputs: [refactored_backend_code, refactored_frontend_code]
+        outputs: [integration_test_results, regression_report]
+        parallel: true
+      - name: generate_test_report
+        agent: qa-architect
+        model_override: gemini-flash-3
+        action: compile_test_summary
+        inputs: [unit_test_results, integration_test_results]
+        outputs: [comprehensive_test_report]
+        depends_on: [run_unit_tests, run_integration_tests]
+    checkpoint: true
+
+  - name: code_review
+    display_name: "Code Review"
+    display_name_ar: "مراجعة الشيفرة"
+    agents: [architect, qa-architect]
+    steps:
+      - name: review_refactored_code
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_refactoring_quality
+        inputs: [refactored_backend_code, refactored_frontend_code, comprehensive_test_report]
+        outputs: [review_feedback, quality_assessment]
+      - name: approve_refactoring
+        agent: qa-architect
+        action: approve_refactoring_merge
+        inputs: [quality_assessment, regression_report]
+        outputs: [approval_decision, merge_record]
+        approval_required: true
+        depends_on: [review_refactored_code]
+    checkpoint: true
+
+transitions:
+  code_analysis -> refactoring_plan: auto
+  refactoring_plan -> refactoring_execution: requires_approval
+  refactoring_execution -> regression_testing: auto
+  regression_testing -> code_review: auto

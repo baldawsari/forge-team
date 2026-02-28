@@ -1,0 +1,121 @@
+name: Penetration Testing
+version: "1.0"
+description: Structured penetration testing workflow from scoping through remediation verification
+
+phases:
+  - name: scoping
+    display_name: "Scoping & Planning"
+    display_name_ar: "تحديد النطاق والتخطيط"
+    agents: [security-specialist, architect]
+    steps:
+      - name: define_scope
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: define_pentest_scope
+        outputs: [scope_document, target_inventory, rules_of_engagement]
+        approval_required: true
+      - name: review_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_attack_surface
+        inputs: [scope_document]
+        outputs: [architecture_review, attack_surface_map]
+        depends_on: [define_scope]
+    checkpoint: true
+
+  - name: reconnaissance
+    display_name: "Reconnaissance"
+    display_name_ar: "الاستطلاع"
+    agents: [security-specialist]
+    steps:
+      - name: passive_recon
+        agent: security-specialist
+        action: perform_passive_recon
+        inputs: [target_inventory, attack_surface_map]
+        outputs: [osint_report, dns_records, technology_fingerprint]
+      - name: active_recon
+        agent: security-specialist
+        action: perform_active_recon
+        inputs: [osint_report, target_inventory]
+        outputs: [port_scan_results, service_enumeration, vulnerability_scan]
+        depends_on: [passive_recon]
+      - name: threat_modeling
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: build_threat_model
+        inputs: [attack_surface_map, vulnerability_scan]
+        outputs: [threat_model, attack_vectors]
+        depends_on: [active_recon]
+    checkpoint: true
+
+  - name: exploitation
+    display_name: "Exploitation & Testing"
+    display_name_ar: "الاختراق والاختبار"
+    agents: [security-specialist]
+    steps:
+      - name: exploit_vulnerabilities
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: execute_exploits
+        inputs: [attack_vectors, vulnerability_scan]
+        outputs: [exploitation_results, proof_of_concepts, access_log]
+        approval_required: true
+      - name: privilege_escalation
+        agent: security-specialist
+        action: test_privilege_escalation
+        inputs: [exploitation_results, access_log]
+        outputs: [escalation_results, lateral_movement_report]
+        depends_on: [exploit_vulnerabilities]
+    checkpoint: true
+
+  - name: reporting
+    display_name: "Reporting"
+    display_name_ar: "إعداد التقارير"
+    agents: [security-specialist, tech-writer]
+    steps:
+      - name: compile_findings
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: compile_pentest_findings
+        inputs: [exploitation_results, escalation_results, threat_model]
+        outputs: [findings_report, risk_ratings, executive_summary]
+      - name: write_report
+        agent: tech-writer
+        action: write_pentest_report
+        inputs: [findings_report, risk_ratings, executive_summary]
+        outputs: [pentest_report, remediation_roadmap]
+        depends_on: [compile_findings]
+    checkpoint: true
+
+  - name: remediation
+    display_name: "Remediation & Verification"
+    display_name_ar: "المعالجة والتحقق"
+    agents: [security-specialist, backend-dev]
+    steps:
+      - name: implement_fixes
+        agent: backend-dev
+        action: implement_security_fixes
+        inputs: [remediation_roadmap, findings_report]
+        outputs: [patched_code, fix_changelog]
+      - name: verify_fixes
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: verify_remediation
+        inputs: [patched_code, exploitation_results]
+        outputs: [verification_report, residual_risk_assessment]
+        depends_on: [implement_fixes]
+      - name: final_signoff
+        agent: security-specialist
+        action: pentest_signoff
+        inputs: [verification_report, residual_risk_assessment]
+        outputs: [final_report, compliance_attestation]
+        depends_on: [verify_fixes]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  scoping -> reconnaissance: requires_approval
+  reconnaissance -> exploitation: requires_approval
+  exploitation -> reporting: auto
+  reporting -> remediation: auto
+  remediation -> scoping: auto

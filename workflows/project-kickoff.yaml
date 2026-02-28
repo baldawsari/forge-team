@@ -1,0 +1,137 @@
+name: Project Kickoff
+version: "1.0"
+description: Comprehensive project kickoff workflow from discovery through sprint zero
+
+phases:
+  - name: discovery
+    display_name: "Discovery"
+    display_name_ar: "الاستكشاف"
+    agents: [product-owner, bmad-master]
+    steps:
+      - name: stakeholder_interviews
+        agent: product-owner
+        action: conduct_stakeholder_interviews
+        outputs: [stakeholder_needs, business_objectives, success_criteria]
+        approval_required: true
+      - name: market_research
+        agent: product-owner
+        action: conduct_market_research
+        outputs: [market_analysis, competitor_review, opportunity_map]
+        parallel: true
+      - name: project_charter
+        agent: bmad-master
+        action: draft_project_charter
+        inputs: [stakeholder_needs, business_objectives, market_analysis]
+        outputs: [project_charter, vision_statement, project_scope]
+        depends_on: [stakeholder_interviews, market_research]
+    checkpoint: true
+
+  - name: requirements_gathering
+    display_name: "Requirements Gathering"
+    display_name_ar: "جمع المتطلبات"
+    agents: [product-owner, business-analyst]
+    steps:
+      - name: define_epics
+        agent: product-owner
+        action: define_project_epics
+        inputs: [project_charter, stakeholder_needs]
+        outputs: [epic_list, feature_map, mvp_definition]
+      - name: detail_requirements
+        agent: business-analyst
+        action: detail_functional_requirements
+        inputs: [epic_list, feature_map]
+        outputs: [requirements_doc, user_stories, acceptance_criteria]
+        depends_on: [define_epics]
+      - name: nonfunctional_requirements
+        agent: business-analyst
+        action: define_nonfunctional_requirements
+        inputs: [project_scope, success_criteria]
+        outputs: [nfr_document, performance_targets, security_requirements]
+        parallel: true
+    checkpoint: true
+
+  - name: team_setup
+    display_name: "Team Setup"
+    display_name_ar: "إعداد الفريق"
+    agents: [scrum-master, bmad-master]
+    steps:
+      - name: define_roles
+        agent: bmad-master
+        action: define_team_roles
+        inputs: [project_scope, requirements_doc]
+        outputs: [team_roster, role_assignments, responsibility_matrix]
+      - name: setup_processes
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: setup_team_processes
+        inputs: [team_roster, role_assignments]
+        outputs: [process_guide, ceremony_schedule, communication_plan]
+        depends_on: [define_roles]
+      - name: setup_tools
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: setup_project_tools
+        inputs: [team_roster, process_guide]
+        outputs: [tool_config, board_setup, notification_config]
+        depends_on: [setup_processes]
+    checkpoint: true
+
+  - name: architecture_planning
+    display_name: "Architecture Planning"
+    display_name_ar: "تخطيط البنية المعمارية"
+    agents: [architect, security-specialist]
+    steps:
+      - name: design_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_initial_architecture
+        inputs: [requirements_doc, nfr_document]
+        outputs: [architecture_proposal, tech_stack, system_diagram]
+        approval_required: true
+      - name: security_review
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: initial_security_review
+        inputs: [architecture_proposal, security_requirements]
+        outputs: [security_assessment, compliance_checklist, threat_model]
+        depends_on: [design_architecture]
+      - name: finalize_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: finalize_architecture
+        inputs: [architecture_proposal, security_assessment]
+        outputs: [final_architecture, adr_log, infrastructure_plan]
+        depends_on: [security_review]
+    checkpoint: true
+
+  - name: sprint_zero
+    display_name: "Sprint Zero"
+    display_name_ar: "السبرنت الصفري"
+    agents: [scrum-master, devops-engineer, architect]
+    steps:
+      - name: setup_infrastructure
+        agent: devops-engineer
+        action: provision_initial_infra
+        inputs: [infrastructure_plan, tech_stack]
+        outputs: [dev_environment, ci_cd_pipeline, repo_structure]
+      - name: create_backlog
+        agent: scrum-master
+        action: create_initial_backlog
+        inputs: [user_stories, mvp_definition, acceptance_criteria]
+        outputs: [product_backlog, sprint_1_plan, story_point_estimates]
+        parallel: true
+      - name: kickoff_presentation
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: prepare_kickoff_presentation
+        inputs: [project_charter, final_architecture, sprint_1_plan]
+        outputs: [kickoff_deck, timeline, risk_register]
+        depends_on: [setup_infrastructure, create_backlog]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  discovery -> requirements_gathering: requires_approval
+  requirements_gathering -> team_setup: auto
+  team_setup -> architecture_planning: auto
+  architecture_planning -> sprint_zero: requires_approval

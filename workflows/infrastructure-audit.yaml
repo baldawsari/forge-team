@@ -1,0 +1,100 @@
+name: Infrastructure Audit
+version: "1.0"
+description: Comprehensive infrastructure audit covering security, compliance, and cost optimization
+
+phases:
+  - name: inventory
+    display_name: "Infrastructure Inventory"
+    display_name_ar: "جرد البنية التحتية"
+    agents: [devops-engineer]
+    steps:
+      - name: discover_resources
+        agent: devops-engineer
+        action: scan_infrastructure_resources
+        outputs: [resource_inventory, network_topology]
+        model_override: gemini-flash-3
+      - name: catalog_services
+        agent: devops-engineer
+        action: catalog_running_services
+        outputs: [service_catalog, dependency_map]
+        parallel: true
+    checkpoint: true
+
+  - name: security_scanning
+    display_name: "Security Scanning"
+    display_name_ar: "فحص الأمان"
+    agents: [security-specialist, devops-engineer]
+    steps:
+      - name: vulnerability_scan
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: run_vulnerability_assessment
+        outputs: [vulnerability_report, cve_list]
+      - name: configuration_audit
+        agent: devops-engineer
+        action: audit_security_configurations
+        outputs: [config_findings, misconfiguration_list]
+        parallel: true
+      - name: penetration_analysis
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: analyze_attack_surface
+        depends_on: [vulnerability_scan, configuration_audit]
+        outputs: [attack_surface_report, risk_ratings]
+    checkpoint: true
+
+  - name: compliance_check
+    display_name: "Compliance Check"
+    display_name_ar: "فحص الامتثال"
+    agents: [security-specialist, devops-engineer]
+    steps:
+      - name: policy_compliance
+        agent: security-specialist
+        action: check_policy_compliance
+        outputs: [compliance_status, policy_violations]
+      - name: benchmark_evaluation
+        agent: devops-engineer
+        action: run_cis_benchmarks
+        outputs: [benchmark_results, hardening_recommendations]
+        parallel: true
+    checkpoint: true
+
+  - name: cost_analysis
+    display_name: "Cost Analysis"
+    display_name_ar: "تحليل التكاليف"
+    agents: [devops-engineer]
+    steps:
+      - name: resource_utilization
+        agent: devops-engineer
+        action: analyze_resource_usage
+        outputs: [utilization_report, idle_resources]
+        model_override: gemini-flash-3
+      - name: cost_optimization
+        agent: devops-engineer
+        action: identify_cost_savings
+        depends_on: [resource_utilization]
+        outputs: [savings_opportunities, rightsizing_recommendations]
+    checkpoint: true
+
+  - name: reporting
+    display_name: "Audit Report"
+    display_name_ar: "تقرير التدقيق"
+    agents: [tech-writer, devops-engineer]
+    steps:
+      - name: compile_findings
+        agent: devops-engineer
+        action: aggregate_audit_findings
+        outputs: [findings_summary, priority_matrix]
+      - name: generate_report
+        agent: tech-writer
+        action: write_audit_report
+        depends_on: [compile_findings]
+        outputs: [audit_report, executive_summary, remediation_roadmap]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  inventory -> security_scanning: auto
+  security_scanning -> compliance_check: auto
+  compliance_check -> cost_analysis: auto
+  cost_analysis -> reporting: requires_approval

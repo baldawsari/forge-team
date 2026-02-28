@@ -1,0 +1,127 @@
+name: System Migration
+version: "1.0"
+description: End-to-end system migration from assessment through validation and cutover
+
+phases:
+  - name: assessment
+    display_name: "Assessment"
+    display_name_ar: "التقييم"
+    agents: [architect, devops-engineer]
+    steps:
+      - name: inventory_current_system
+        agent: devops-engineer
+        action: audit_current_infrastructure
+        outputs: [system_inventory, dependency_map, resource_usage]
+      - name: assess_migration_complexity
+        agent: architect
+        model_override: claude-opus-4.6
+        action: evaluate_migration_scope
+        inputs: [system_inventory, dependency_map]
+        outputs: [complexity_assessment, risk_register, migration_feasibility]
+        depends_on: [inventory_current_system]
+    checkpoint: true
+
+  - name: migration_planning
+    display_name: "Migration Planning"
+    display_name_ar: "تخطيط الترحيل"
+    agents: [architect, devops-engineer, backend-dev]
+    steps:
+      - name: design_target_architecture
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_target_state
+        inputs: [system_inventory, complexity_assessment]
+        outputs: [target_architecture, component_mapping]
+      - name: create_migration_runbook
+        agent: devops-engineer
+        action: plan_migration_sequence
+        inputs: [target_architecture, dependency_map, risk_register]
+        outputs: [migration_runbook, rollback_procedures, downtime_schedule]
+        depends_on: [design_target_architecture]
+      - name: prepare_data_migration
+        agent: backend-dev
+        action: plan_data_migration
+        inputs: [component_mapping, resource_usage]
+        outputs: [data_migration_scripts, transformation_rules]
+        depends_on: [design_target_architecture]
+    checkpoint: true
+
+  - name: migration_execution
+    display_name: "Migration Execution"
+    display_name_ar: "تنفيذ الترحيل"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: provision_target_environment
+        agent: devops-engineer
+        action: provision_infrastructure
+        inputs: [target_architecture]
+        outputs: [provisioned_environment, infrastructure_config]
+      - name: migrate_data
+        agent: backend-dev
+        action: execute_data_migration
+        inputs: [data_migration_scripts, transformation_rules]
+        outputs: [migration_log, data_integrity_checksums]
+        depends_on: [provision_target_environment]
+      - name: deploy_application
+        agent: devops-engineer
+        action: deploy_to_target
+        inputs: [provisioned_environment, infrastructure_config]
+        outputs: [deployment_status, service_endpoints]
+        depends_on: [migrate_data]
+    checkpoint: true
+
+  - name: validation
+    display_name: "Validation"
+    display_name_ar: "التحقق والتأكد"
+    agents: [qa-architect, backend-dev]
+    steps:
+      - name: validate_data_integrity
+        agent: backend-dev
+        action: verify_data_consistency
+        inputs: [data_integrity_checksums, migration_log]
+        outputs: [data_validation_report, discrepancy_list]
+      - name: run_acceptance_tests
+        agent: qa-architect
+        action: execute_migration_acceptance_tests
+        inputs: [service_endpoints]
+        outputs: [acceptance_test_results, performance_comparison]
+        parallel: true
+      - name: validate_functionality
+        agent: qa-architect
+        action: run_functional_validation
+        inputs: [service_endpoints, acceptance_test_results]
+        outputs: [functional_validation_report]
+        depends_on: [run_acceptance_tests]
+    checkpoint: true
+
+  - name: cutover
+    display_name: "Cutover"
+    display_name_ar: "التحويل النهائي"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: execute_cutover
+        agent: devops-engineer
+        action: perform_dns_cutover
+        inputs: [service_endpoints, functional_validation_report]
+        outputs: [cutover_status, traffic_routing]
+        approval_required: true
+      - name: decommission_old_system
+        agent: devops-engineer
+        action: schedule_decommission
+        inputs: [cutover_status, system_inventory]
+        outputs: [decommission_plan, archive_records]
+        depends_on: [execute_cutover]
+      - name: document_migration
+        agent: architect
+        model_override: gemini-flash-3
+        action: create_migration_summary
+        inputs: [target_architecture, migration_log, cutover_status]
+        outputs: [migration_summary, lessons_learned]
+        depends_on: [execute_cutover]
+    checkpoint: true
+
+transitions:
+  assessment -> migration_planning: auto
+  migration_planning -> migration_execution: requires_approval
+  migration_execution -> validation: auto
+  validation -> cutover: requires_approval

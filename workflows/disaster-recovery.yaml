@@ -1,0 +1,114 @@
+name: Disaster Recovery Plan
+version: "1.0"
+description: Disaster recovery planning from risk analysis through drill execution and documentation
+
+phases:
+  - name: risk_analysis
+    display_name: "Risk Analysis"
+    display_name_ar: "تحليل المخاطر"
+    agents: [architect, security-specialist]
+    steps:
+      - name: identify_risks
+        agent: architect
+        model_override: claude-opus-4.6
+        action: identify_disaster_scenarios
+        outputs: [risk_catalog, impact_assessment]
+      - name: threat_modeling
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: model_threat_landscape
+        outputs: [threat_model, probability_matrix]
+        parallel: true
+      - name: prioritize_risks
+        agent: architect
+        action: rank_risks_by_impact
+        depends_on: [identify_risks, threat_modeling]
+        outputs: [risk_priority_list, critical_systems]
+    checkpoint: true
+
+  - name: backup_strategy
+    display_name: "Backup Strategy"
+    display_name_ar: "استراتيجية النسخ الاحتياطي"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: define_rpo_rto
+        agent: architect
+        action: define_recovery_objectives
+        outputs: [rpo_rto_targets, tier_classification]
+      - name: design_backup_architecture
+        agent: devops-engineer
+        action: design_backup_solution
+        depends_on: [define_rpo_rto]
+        outputs: [backup_architecture, replication_config]
+      - name: configure_backups
+        agent: devops-engineer
+        action: implement_backup_procedures
+        depends_on: [design_backup_architecture]
+        outputs: [backup_config, retention_policy]
+    checkpoint: true
+
+  - name: recovery_planning
+    display_name: "Recovery Planning"
+    display_name_ar: "تخطيط الاسترداد"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: create_recovery_procedures
+        agent: devops-engineer
+        action: write_recovery_runbooks
+        outputs: [recovery_runbooks, failover_procedures]
+      - name: define_communication_plan
+        agent: architect
+        action: create_communication_plan
+        outputs: [communication_plan, contact_list]
+        parallel: true
+      - name: assign_roles
+        agent: devops-engineer
+        action: define_dr_team_roles
+        outputs: [role_assignments, responsibility_matrix]
+        parallel: true
+    checkpoint: true
+
+  - name: drill_execution
+    display_name: "Drill Execution"
+    display_name_ar: "تنفيذ التدريبات"
+    agents: [devops-engineer, security-specialist]
+    steps:
+      - name: plan_drill
+        agent: devops-engineer
+        action: design_dr_drill
+        outputs: [drill_plan, success_criteria]
+      - name: execute_drill
+        agent: devops-engineer
+        action: run_recovery_drill
+        depends_on: [plan_drill]
+        outputs: [drill_results, recovery_metrics]
+        approval_required: true
+      - name: evaluate_results
+        agent: security-specialist
+        action: assess_drill_effectiveness
+        depends_on: [execute_drill]
+        outputs: [evaluation_report, gap_findings]
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer, devops-engineer]
+    steps:
+      - name: compile_dr_plan
+        agent: tech-writer
+        action: write_dr_documentation
+        outputs: [dr_plan_document, quick_reference_guide]
+      - name: review_and_approve
+        agent: devops-engineer
+        action: review_dr_documentation
+        depends_on: [compile_dr_plan]
+        outputs: [approved_document, distribution_list]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  risk_analysis -> backup_strategy: auto
+  backup_strategy -> recovery_planning: auto
+  recovery_planning -> drill_execution: requires_approval
+  drill_execution -> documentation: auto

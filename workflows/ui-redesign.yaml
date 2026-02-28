@@ -1,0 +1,110 @@
+name: UI/UX Redesign
+version: "1.0"
+description: User-centered redesign process from research through implementation and usability testing
+
+phases:
+  - name: user_research
+    display_name: "User Research"
+    display_name_ar: "بحث المستخدمين"
+    agents: [ux-designer, business-analyst]
+    steps:
+      - name: analyze_user_feedback
+        agent: ux-designer
+        action: analyze_user_feedback
+        outputs: [pain_points, user_personas, journey_maps]
+      - name: competitive_analysis
+        agent: business-analyst
+        action: analyze_competitor_ux
+        outputs: [competitive_ux_report, best_practices]
+        parallel: true
+      - name: define_redesign_goals
+        agent: ux-designer
+        action: define_design_goals
+        inputs: [pain_points, competitive_ux_report]
+        outputs: [redesign_objectives, success_metrics]
+        depends_on: [analyze_user_feedback, competitive_analysis]
+    checkpoint: true
+
+  - name: wireframing
+    display_name: "Wireframing"
+    display_name_ar: "التخطيط الهيكلي"
+    agents: [ux-designer]
+    steps:
+      - name: create_information_architecture
+        agent: ux-designer
+        action: design_information_architecture
+        inputs: [user_personas, redesign_objectives]
+        outputs: [site_map, navigation_structure]
+      - name: create_wireframes
+        agent: ux-designer
+        action: create_wireframes
+        inputs: [site_map, navigation_structure]
+        outputs: [wireframes, interaction_flows, rtl_layout_plan]
+        depends_on: [create_information_architecture]
+    checkpoint: true
+
+  - name: prototyping
+    display_name: "Prototyping"
+    display_name_ar: "النمذجة الأولية"
+    agents: [ux-designer, frontend-dev]
+    steps:
+      - name: build_design_system
+        agent: ux-designer
+        action: create_design_system
+        inputs: [wireframes]
+        outputs: [design_tokens, component_library_spec, rtl_guidelines]
+      - name: build_prototype
+        agent: frontend-dev
+        action: build_interactive_prototype
+        inputs: [wireframes, interaction_flows, design_tokens]
+        outputs: [interactive_prototype, component_stubs]
+        depends_on: [build_design_system]
+    checkpoint: true
+
+  - name: implementation
+    display_name: "Implementation"
+    display_name_ar: "التنفيذ"
+    agents: [frontend-dev, backend-dev]
+    steps:
+      - name: implement_components
+        agent: frontend-dev
+        action: implement_ui_components
+        inputs: [component_library_spec, interactive_prototype, rtl_guidelines]
+        outputs: [ui_components, style_sheets]
+      - name: integrate_backend
+        agent: backend-dev
+        action: connect_ui_to_api
+        inputs: [ui_components]
+        outputs: [integrated_views, api_bindings]
+        depends_on: [implement_components]
+      - name: implement_rtl_support
+        agent: frontend-dev
+        action: implement_rtl_layout
+        inputs: [rtl_guidelines, ui_components]
+        outputs: [rtl_implementation, bidirectional_styles]
+        parallel: true
+    checkpoint: true
+
+  - name: usability_testing
+    display_name: "Usability Testing"
+    display_name_ar: "اختبار قابلية الاستخدام"
+    agents: [qa-architect, ux-designer]
+    steps:
+      - name: run_usability_tests
+        agent: qa-architect
+        action: execute_usability_tests
+        inputs: [integrated_views, success_metrics]
+        outputs: [usability_test_results, accessibility_report]
+      - name: analyze_test_results
+        agent: ux-designer
+        action: analyze_usability_findings
+        inputs: [usability_test_results]
+        outputs: [ux_improvement_plan, final_design_report]
+        depends_on: [run_usability_tests]
+    checkpoint: true
+
+transitions:
+  user_research -> wireframing: auto
+  wireframing -> prototyping: requires_approval
+  prototyping -> implementation: auto
+  implementation -> usability_testing: auto

@@ -1,0 +1,114 @@
+name: Stakeholder Progress Report
+version: "1.0"
+description: Stakeholder progress reporting workflow from data gathering through presentation preparation
+
+phases:
+  - name: data_gathering
+    display_name: "Data Gathering"
+    display_name_ar: "جمع البيانات"
+    agents: [scrum-master, devops-engineer]
+    steps:
+      - name: collect_sprint_metrics
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: collect_progress_metrics
+        outputs: [velocity_data, burndown_charts, sprint_summaries]
+      - name: collect_system_metrics
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: collect_system_health
+        outputs: [uptime_stats, performance_metrics, incident_log]
+        parallel: true
+      - name: collect_quality_metrics
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: collect_quality_data
+        outputs: [bug_count, test_coverage, defect_trends]
+        parallel: true
+    checkpoint: true
+
+  - name: progress_analysis
+    display_name: "Progress Analysis"
+    display_name_ar: "تحليل التقدم"
+    agents: [product-owner, scrum-master]
+    steps:
+      - name: analyze_progress
+        agent: product-owner
+        action: analyze_project_progress
+        inputs: [velocity_data, sprint_summaries]
+        outputs: [progress_analysis, milestone_status, risk_assessment]
+      - name: analyze_budget
+        agent: scrum-master
+        action: analyze_budget_status
+        inputs: [sprint_summaries, velocity_data]
+        outputs: [budget_status, resource_utilization, forecast]
+        parallel: true
+      - name: identify_risks
+        agent: product-owner
+        action: identify_risks_and_blockers
+        inputs: [progress_analysis, incident_log, defect_trends]
+        outputs: [risk_register, blocker_list, mitigation_plans]
+        depends_on: [analyze_progress]
+    checkpoint: true
+
+  - name: report_writing
+    display_name: "Report Writing"
+    display_name_ar: "كتابة التقرير"
+    agents: [tech-writer, product-owner]
+    steps:
+      - name: write_executive_summary
+        agent: product-owner
+        action: write_executive_summary
+        inputs: [progress_analysis, milestone_status, budget_status]
+        outputs: [executive_summary, key_highlights, decisions_needed]
+      - name: write_detailed_report
+        agent: tech-writer
+        action: write_progress_report
+        inputs: [progress_analysis, risk_register, quality_metrics]
+        outputs: [detailed_report, charts, appendices]
+        depends_on: [write_executive_summary]
+    checkpoint: true
+
+  - name: executive_review
+    display_name: "Executive Review"
+    display_name_ar: "المراجعة التنفيذية"
+    agents: [product-owner, bmad-master]
+    steps:
+      - name: internal_review
+        agent: bmad-master
+        action: review_report_accuracy
+        inputs: [detailed_report, executive_summary]
+        outputs: [review_feedback, correction_list]
+        approval_required: true
+      - name: incorporate_feedback
+        agent: product-owner
+        action: incorporate_review_feedback
+        inputs: [review_feedback, detailed_report]
+        outputs: [final_report, approved_summary]
+        depends_on: [internal_review]
+    checkpoint: true
+
+  - name: presentation_prep
+    display_name: "Presentation Preparation"
+    display_name_ar: "إعداد العرض التقديمي"
+    agents: [product-owner, tech-writer]
+    steps:
+      - name: create_presentation
+        agent: product-owner
+        action: create_stakeholder_presentation
+        inputs: [final_report, approved_summary, charts]
+        outputs: [presentation_deck, talking_points]
+      - name: prepare_handouts
+        agent: tech-writer
+        model_override: gemini-flash-3
+        action: prepare_stakeholder_handouts
+        inputs: [final_report, presentation_deck]
+        outputs: [handout_package, faq_document, next_steps_summary]
+        depends_on: [create_presentation]
+    checkpoint: true
+
+transitions:
+  data_gathering -> progress_analysis: auto
+  progress_analysis -> report_writing: auto
+  report_writing -> executive_review: requires_approval
+  executive_review -> presentation_prep: auto

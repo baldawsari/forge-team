@@ -1,0 +1,189 @@
+name: Riyadh Attendance Tracker
+version: "1.0"
+description: Full SDLC pipeline for building the Riyadh Attendance Tracker with Saudization compliance module
+
+phases:
+  - name: requirements
+    display_name: "Requirements & Compliance Research"
+    display_name_ar: "المتطلبات وبحث الامتثال"
+    agents: [product-owner, business-analyst]
+    steps:
+      - name: gather_requirements
+        agent: product-owner
+        action: gather_attendance_requirements
+        outputs: [user_stories, saudization_rules, compliance_requirements]
+        approval_required: true
+      - name: compliance_research
+        agent: business-analyst
+        action: research_saudi_labor_law
+        outputs: [labor_law_summary, nitaqat_rules, attendance_regulations]
+        parallel: true
+      - name: finalize_requirements
+        agent: product-owner
+        action: finalize_requirements_doc
+        inputs: [user_stories, saudization_rules, labor_law_summary]
+        outputs: [prd, acceptance_criteria]
+        depends_on: [gather_requirements, compliance_research]
+    checkpoint: true
+
+  - name: architecture
+    display_name: "System Architecture"
+    display_name_ar: "تصميم النظام"
+    agents: [architect]
+    steps:
+      - name: design_system
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_attendance_system
+        inputs: [prd, saudization_rules]
+        outputs: [system_diagram, api_spec, db_schema, auth_design]
+        approval_required: true
+      - name: design_saudization_module
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_compliance_module
+        inputs: [nitaqat_rules, attendance_regulations]
+        outputs: [compliance_module_design, integration_plan]
+        depends_on: [design_system]
+    checkpoint: true
+
+  - name: ux_design
+    display_name: "UX/UI Design"
+    display_name_ar: "تصميم الواجهة"
+    agents: [ux-designer]
+    steps:
+      - name: create_wireframes
+        agent: ux-designer
+        action: design_attendance_ui
+        inputs: [prd, system_diagram]
+        outputs: [wireframes, component_specs, rtl_layout, arabic_ui_kit]
+    checkpoint: true
+
+  - name: backend_development
+    display_name: "Backend Development"
+    display_name_ar: "تطوير الخلفية"
+    agents: [backend-dev]
+    steps:
+      - name: implement_api
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: implement_attendance_api
+        inputs: [api_spec, db_schema]
+        outputs: [api_code, db_migrations, api_tests]
+      - name: implement_saudization
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: implement_compliance_module
+        inputs: [compliance_module_design, integration_plan]
+        outputs: [compliance_code, compliance_tests]
+        depends_on: [implement_api]
+    checkpoint: true
+
+  - name: frontend_development
+    display_name: "Frontend Development"
+    display_name_ar: "تطوير الواجهة"
+    agents: [frontend-dev]
+    steps:
+      - name: implement_ui
+        agent: frontend-dev
+        action: implement_attendance_ui
+        inputs: [wireframes, component_specs, rtl_layout]
+        outputs: [frontend_code, component_library, rtl_styles]
+      - name: integrate_frontend_backend
+        agent: frontend-dev
+        action: integrate_with_api
+        inputs: [api_code, frontend_code]
+        outputs: [integrated_app, integration_tests]
+        depends_on: [implement_ui]
+    checkpoint: true
+
+  - name: testing
+    display_name: "Testing & QA"
+    display_name_ar: "الاختبار وضمان الجودة"
+    agents: [qa-architect, security-specialist]
+    steps:
+      - name: functional_testing
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: run_functional_tests
+        inputs: [integrated_app, acceptance_criteria]
+        outputs: [test_results, bug_list, coverage_report]
+      - name: compliance_testing
+        agent: qa-architect
+        action: test_saudization_compliance
+        inputs: [compliance_code, nitaqat_rules]
+        outputs: [compliance_test_results, compliance_score]
+        depends_on: [functional_testing]
+      - name: security_audit
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: audit_attendance_security
+        inputs: [integrated_app, auth_design]
+        outputs: [security_report, threat_model, remediation_plan]
+        parallel: true
+      - name: arabic_rtl_testing
+        agent: qa-architect
+        action: test_arabic_rtl
+        inputs: [frontend_code, rtl_styles]
+        outputs: [rtl_test_results, localization_report]
+        parallel: true
+    checkpoint: true
+
+  - name: deployment
+    display_name: "Deployment"
+    display_name_ar: "النشر"
+    agents: [devops-engineer]
+    steps:
+      - name: setup_infrastructure
+        agent: devops-engineer
+        action: provision_riyadh_infra
+        outputs: [infra_config, riyadh_vpc, monitoring_setup]
+      - name: deploy_application
+        agent: devops-engineer
+        action: deploy_to_riyadh
+        inputs: [integrated_app, infra_config]
+        outputs: [deployment_url, health_checks, rollback_plan]
+        depends_on: [setup_infrastructure]
+        approval_required: true
+    checkpoint: true
+
+  - name: training
+    display_name: "Training & Handover"
+    display_name_ar: "التدريب والتسليم"
+    agents: [tech-writer, scrum-master]
+    steps:
+      - name: create_training_materials
+        agent: tech-writer
+        action: create_training_materials
+        inputs: [user_guide, compliance_handbook, deployment_url]
+        outputs: [training_deck, video_scripts, faq_doc]
+      - name: conduct_handover
+        agent: scrum-master
+        action: conduct_handover_session
+        inputs: [training_deck, admin_guide]
+        outputs: [handover_checklist, support_plan]
+        depends_on: [create_training_materials]
+        approval_required: true
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer]
+    steps:
+      - name: write_docs
+        agent: tech-writer
+        action: write_attendance_docs
+        inputs: [api_spec, prd, deployment_url]
+        outputs: [api_docs, user_guide, admin_guide, compliance_handbook]
+    checkpoint: true
+
+transitions:
+  requirements -> architecture: requires_approval
+  architecture -> ux_design: auto
+  ux_design -> backend_development: auto
+  backend_development -> frontend_development: auto
+  frontend_development -> testing: auto
+  testing -> deployment: requires_approval
+  deployment -> training: auto
+  training -> documentation: auto

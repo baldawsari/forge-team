@@ -1,0 +1,130 @@
+name: E2E Test Suite Creation
+version: "1.0"
+description: End-to-end test suite creation workflow from analysis through execution and maintenance planning
+
+phases:
+  - name: test_analysis
+    display_name: "Test Analysis"
+    display_name_ar: "تحليل الاختبارات"
+    agents: [qa-architect, product-owner]
+    steps:
+      - name: analyze_requirements
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: analyze_test_requirements
+        outputs: [test_scope, user_flows, critical_paths, risk_areas]
+        approval_required: true
+      - name: define_coverage
+        agent: qa-architect
+        action: define_coverage_targets
+        inputs: [test_scope, critical_paths]
+        outputs: [coverage_matrix, priority_map]
+        depends_on: [analyze_requirements]
+      - name: validate_acceptance
+        agent: product-owner
+        model_override: gemini-flash-3
+        action: validate_acceptance_criteria
+        inputs: [test_scope, user_flows]
+        outputs: [validated_criteria, edge_cases]
+        parallel: true
+    checkpoint: true
+
+  - name: framework_setup
+    display_name: "Framework Setup"
+    display_name_ar: "إعداد إطار العمل"
+    agents: [qa-architect, devops-engineer]
+    steps:
+      - name: select_framework
+        agent: qa-architect
+        action: select_test_framework
+        inputs: [test_scope, coverage_matrix]
+        outputs: [framework_config, tool_selection, project_structure]
+      - name: setup_ci_integration
+        agent: devops-engineer
+        action: setup_test_ci_pipeline
+        inputs: [framework_config, project_structure]
+        outputs: [ci_config, test_pipeline, artifact_storage]
+        depends_on: [select_framework]
+      - name: setup_test_data
+        agent: qa-architect
+        model_override: gemini-flash-3
+        action: setup_test_fixtures
+        inputs: [user_flows, edge_cases]
+        outputs: [test_fixtures, mock_data, seed_scripts]
+        parallel: true
+    checkpoint: true
+
+  - name: test_creation
+    display_name: "Test Creation"
+    display_name_ar: "إنشاء الاختبارات"
+    agents: [qa-architect, frontend-dev, backend-dev]
+    steps:
+      - name: write_ui_tests
+        agent: frontend-dev
+        action: write_e2e_ui_tests
+        inputs: [user_flows, framework_config, test_fixtures]
+        outputs: [ui_test_suite, page_objects, test_helpers]
+      - name: write_api_tests
+        agent: backend-dev
+        action: write_e2e_api_tests
+        inputs: [critical_paths, framework_config, test_fixtures]
+        outputs: [api_test_suite, request_helpers, response_validators]
+        parallel: true
+      - name: write_integration_tests
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: write_integration_tests
+        inputs: [ui_test_suite, api_test_suite, coverage_matrix]
+        outputs: [integration_test_suite, cross_service_tests]
+        depends_on: [write_ui_tests, write_api_tests]
+    checkpoint: true
+
+  - name: test_execution
+    display_name: "Test Execution"
+    display_name_ar: "تنفيذ الاختبارات"
+    agents: [qa-architect, devops-engineer]
+    steps:
+      - name: run_test_suite
+        agent: qa-architect
+        action: execute_full_suite
+        inputs: [ui_test_suite, api_test_suite, integration_test_suite]
+        outputs: [test_results, failure_analysis, coverage_report]
+      - name: fix_flaky_tests
+        agent: qa-architect
+        action: stabilize_tests
+        inputs: [test_results, failure_analysis]
+        outputs: [stabilized_tests, flakiness_report]
+        depends_on: [run_test_suite]
+      - name: validate_pipeline
+        agent: devops-engineer
+        model_override: gemini-flash-3
+        action: validate_ci_test_run
+        inputs: [ci_config, stabilized_tests]
+        outputs: [pipeline_validation, execution_metrics]
+        depends_on: [fix_flaky_tests]
+    checkpoint: true
+
+  - name: maintenance_plan
+    display_name: "Maintenance Plan"
+    display_name_ar: "خطة الصيانة"
+    agents: [qa-architect, tech-writer]
+    steps:
+      - name: create_maintenance_strategy
+        agent: qa-architect
+        action: define_maintenance_strategy
+        inputs: [coverage_report, flakiness_report, execution_metrics]
+        outputs: [maintenance_plan, test_ownership_matrix, update_schedule]
+        approval_required: true
+      - name: write_test_docs
+        agent: tech-writer
+        action: write_test_documentation
+        inputs: [maintenance_plan, test_ownership_matrix, framework_config]
+        outputs: [test_docs, runbook, contribution_guide]
+        depends_on: [create_maintenance_strategy]
+    checkpoint: true
+
+transitions:
+  test_analysis -> framework_setup: requires_approval
+  framework_setup -> test_creation: auto
+  test_creation -> test_execution: auto
+  test_execution -> maintenance_plan: auto

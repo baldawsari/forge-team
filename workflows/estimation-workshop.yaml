@@ -1,0 +1,118 @@
+name: Estimation Workshop
+version: "1.0"
+description: Structured estimation workshop workflow from backlog review through team commitment
+
+phases:
+  - name: backlog_review
+    display_name: "Backlog Review"
+    display_name_ar: "مراجعة قائمة المهام"
+    agents: [product-owner, scrum-master]
+    steps:
+      - name: review_backlog
+        agent: product-owner
+        action: review_product_backlog
+        outputs: [prioritized_backlog, story_descriptions, acceptance_criteria]
+        approval_required: true
+      - name: clarify_stories
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: clarify_story_details
+        inputs: [prioritized_backlog, story_descriptions]
+        outputs: [clarified_stories, open_questions, dependencies]
+        depends_on: [review_backlog]
+    checkpoint: true
+
+  - name: complexity_assessment
+    display_name: "Complexity Assessment"
+    display_name_ar: "تقييم التعقيد"
+    agents: [architect, scrum-master]
+    steps:
+      - name: assess_technical_complexity
+        agent: architect
+        model_override: claude-opus-4.6
+        action: assess_technical_complexity
+        inputs: [clarified_stories, dependencies]
+        outputs: [complexity_ratings, technical_risks, architecture_impact]
+      - name: assess_integration_complexity
+        agent: architect
+        action: assess_integration_impact
+        inputs: [dependencies, architecture_impact]
+        outputs: [integration_assessment, cross_team_dependencies]
+        depends_on: [assess_technical_complexity]
+      - name: compile_complexity_report
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: compile_complexity_summary
+        inputs: [complexity_ratings, integration_assessment]
+        outputs: [complexity_summary, risk_factors]
+        depends_on: [assess_integration_complexity]
+    checkpoint: true
+
+  - name: effort_estimation
+    display_name: "Effort Estimation"
+    display_name_ar: "تقدير الجهد"
+    agents: [scrum-master, architect]
+    steps:
+      - name: run_estimation_session
+        agent: scrum-master
+        action: facilitate_estimation
+        inputs: [clarified_stories, complexity_summary, risk_factors]
+        outputs: [story_points, estimation_notes, confidence_levels]
+      - name: validate_estimates
+        agent: architect
+        action: validate_technical_estimates
+        inputs: [story_points, complexity_ratings, technical_risks]
+        outputs: [validated_estimates, adjustment_recommendations]
+        depends_on: [run_estimation_session]
+      - name: finalize_estimates
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: finalize_story_estimates
+        inputs: [validated_estimates, adjustment_recommendations]
+        outputs: [final_estimates, estimation_report]
+        depends_on: [validate_estimates]
+    checkpoint: true
+
+  - name: sprint_planning
+    display_name: "Sprint Planning"
+    display_name_ar: "تخطيط السبرنت"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: calculate_capacity
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: calculate_team_capacity
+        outputs: [team_capacity, availability_matrix, velocity_reference]
+      - name: plan_sprint
+        agent: product-owner
+        action: plan_sprint_scope
+        inputs: [final_estimates, team_capacity, prioritized_backlog]
+        outputs: [sprint_scope, selected_stories, stretch_goals]
+        depends_on: [calculate_capacity]
+        approval_required: true
+    checkpoint: true
+
+  - name: team_commitment
+    display_name: "Team Commitment"
+    display_name_ar: "التزام الفريق"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: review_commitment
+        agent: scrum-master
+        action: facilitate_commitment_review
+        inputs: [sprint_scope, selected_stories, team_capacity]
+        outputs: [commitment_agreement, task_breakdown, risk_mitigations]
+      - name: finalize_sprint
+        agent: product-owner
+        action: finalize_sprint_plan
+        inputs: [commitment_agreement, task_breakdown]
+        outputs: [final_sprint_plan, sprint_goals, definition_of_done]
+        depends_on: [review_commitment]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  backlog_review -> complexity_assessment: auto
+  complexity_assessment -> effort_estimation: auto
+  effort_estimation -> sprint_planning: requires_approval
+  sprint_planning -> team_commitment: auto

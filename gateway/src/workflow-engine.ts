@@ -42,6 +42,7 @@ import type {
 import type { AgentManager } from './agent-manager';
 import type { ModelRouter } from './model-router';
 import type { VIADPEngine } from './viadp-engine';
+import { MemorySaver, type BaseCheckpointSaver } from '@langchain/langgraph';
 import { PostgresCheckpointSaver, buildWorkflowGraph } from './langgraph';
 import type { WorkflowStateType } from './langgraph';
 import { createViadpDelegationNode } from './langgraph-nodes/viadp-delegation-node';
@@ -345,18 +346,33 @@ export interface WorkflowExecutorDeps {
  */
 export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
   private readonly loader: WorkflowLoader;
-  private readonly checkpointer: PostgresCheckpointSaver;
+  private readonly checkpointer: BaseCheckpointSaver;
   private readonly instances: Map<string, WorkflowInstance> = new Map();
   private readonly agentManager: AgentManager;
   private readonly modelRouter: ModelRouter;
   private readonly viadpEngine: VIADPEngine;
+  private pendingInterrupts: Map<string, {
+    id: string;
+    instanceId: string;
+    agentId: string;
+    agentName: string;
+    stepId: string;
+    type: 'approval_gate' | 'human_mention' | 'confidence_low';
+    question: string;
+    context?: string;
+    confidence?: number;
+    createdAt: string;
+    status: 'pending' | 'approved' | 'rejected';
+  }> = new Map();
   private compiledGraph: ReturnType<typeof buildWorkflowGraph> | null = null;
   private viadpNode: ReturnType<typeof createViadpDelegationNode> | null = null;
 
   constructor(deps: WorkflowExecutorDeps) {
     super();
     this.loader = new WorkflowLoader(deps.workflowsDir);
-    this.checkpointer = new PostgresCheckpointSaver(deps.databaseUrl);
+    this.checkpointer = deps.databaseUrl
+      ? new PostgresCheckpointSaver(deps.databaseUrl)
+      : new MemorySaver() as any;
     this.agentManager = deps.agentManager;
     this.modelRouter = deps.modelRouter;
     this.viadpEngine = deps.viadpEngine;
@@ -472,6 +488,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
       startedAt: now,
       updatedAt: now,
       completedAt: null,
+      viadpContext: null,
       definition,
     };
 
@@ -610,6 +627,76 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     } catch {
       // Best effort - instance may not have been started in LangGraph yet
     }
+  }
+
+  createInterrupt(instanceId: string, agentId: string, agentName: string, stepId: string, type: string, question: string, context?: string, confidence?: number): string {
+    const id = randomUUID();
+    const interrupt = {
+      id,
+      instanceId,
+      agentId,
+      agentName,
+      stepId,
+      type: type as any,
+      question,
+      context,
+      confidence,
+      createdAt: new Date().toISOString(),
+      status: 'pending' as const,
+    };
+    this.pendingInterrupts.set(id, interrupt);
+    if (this.instances.has(instanceId)) {
+      this.pauseWorkflow(instanceId);
+    }
+    return id;
+  }
+
+  resolveInterrupt(interruptId: string, approved: boolean, feedback?: string): void {
+    const interrupt = this.pendingInterrupts.get(interruptId);
+    if (!interrupt) throw new Error(`Interrupt ${interruptId} not found`);
+    interrupt.status = approved ? 'approved' : 'rejected';
+    if (approved && this.instances.has(interrupt.instanceId)) {
+      this.resumeWorkflow(interrupt.instanceId);
+    }
+  }
+
+  getPendingInterrupts(): Array<typeof this.pendingInterrupts extends Map<string, infer V> ? V : never> {
+    return Array.from(this.pendingInterrupts.values()).filter(i => i.status === 'pending');
+  }
+
+  getAllInterrupts(): Array<typeof this.pendingInterrupts extends Map<string, infer V> ? V : never> {
+    return Array.from(this.pendingInterrupts.values());
+  }
+
+  pauseAllWorkflows(): { paused: string[] } {
+    const paused: string[] = [];
+    for (const [id, instance] of this.instances.entries()) {
+      if (instance.status === 'in-progress' || instance.status === 'waiting_approval') {
+        this.pauseWorkflow(id);
+        paused.push(id);
+      }
+    }
+    return { paused };
+  }
+
+  async resumeAllWorkflows(): Promise<{ resumed: string[] }> {
+    const resumed: string[] = [];
+    for (const [id, instance] of this.instances.entries()) {
+      if (instance.status === 'paused') {
+        await this.resumeWorkflow(id);
+        resumed.push(id);
+      }
+    }
+    return { resumed };
+  }
+
+  getWorkflowStatuses(): Array<{ id: string; label: string; status: string; progress: number }> {
+    return Array.from(this.instances.values()).map(inst => ({
+      id: inst.id,
+      label: inst.workflowName,
+      status: inst.status,
+      progress: inst.progress.overall,
+    }));
   }
 
   /**

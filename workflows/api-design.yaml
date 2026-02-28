@@ -1,0 +1,108 @@
+name: API Design & Documentation
+version: "1.0"
+description: End-to-end API design from requirements through specification and documentation
+
+phases:
+  - name: requirements_gathering
+    display_name: "Requirements Gathering"
+    display_name_ar: "جمع المتطلبات"
+    agents: [product-owner, business-analyst]
+    steps:
+      - name: collect_api_requirements
+        agent: product-owner
+        action: gather_api_needs
+        outputs: [api_use_cases, consumer_profiles]
+      - name: analyze_integrations
+        agent: business-analyst
+        action: analyze_integration_points
+        outputs: [integration_map, data_flow_requirements]
+        parallel: true
+    checkpoint: true
+
+  - name: api_design
+    display_name: "API Design"
+    display_name_ar: "تصميم الواجهة البرمجية"
+    agents: [architect, backend-dev]
+    steps:
+      - name: design_api_structure
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_api_architecture
+        inputs: [api_use_cases, integration_map]
+        outputs: [api_blueprint, resource_model, endpoint_map]
+      - name: design_data_contracts
+        agent: backend-dev
+        action: define_data_contracts
+        inputs: [api_blueprint, data_flow_requirements]
+        outputs: [request_schemas, response_schemas, error_schemas]
+        depends_on: [design_api_structure]
+      - name: design_auth_strategy
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_authentication
+        inputs: [consumer_profiles]
+        outputs: [auth_strategy, rate_limit_policy]
+        parallel: true
+    checkpoint: true
+
+  - name: specification_writing
+    display_name: "Specification Writing"
+    display_name_ar: "كتابة المواصفات"
+    agents: [backend-dev, tech-writer]
+    steps:
+      - name: write_openapi_spec
+        agent: backend-dev
+        action: generate_openapi_specification
+        inputs: [api_blueprint, request_schemas, response_schemas]
+        outputs: [openapi_spec, endpoint_definitions]
+      - name: write_examples
+        agent: tech-writer
+        action: create_api_examples
+        inputs: [openapi_spec]
+        outputs: [request_examples, response_examples]
+        depends_on: [write_openapi_spec]
+    checkpoint: true
+
+  - name: design_review
+    display_name: "Design Review"
+    display_name_ar: "مراجعة التصميم"
+    agents: [architect, security-specialist]
+    steps:
+      - name: review_api_design
+        agent: architect
+        model_override: claude-opus-4.6
+        action: review_api_patterns
+        inputs: [openapi_spec, auth_strategy]
+        outputs: [design_review_feedback, consistency_report]
+      - name: security_review
+        agent: security-specialist
+        model_override: claude-opus-4.6
+        action: review_api_security
+        inputs: [openapi_spec, auth_strategy, rate_limit_policy]
+        outputs: [api_security_report, security_recommendations]
+        parallel: true
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer]
+    steps:
+      - name: write_api_docs
+        agent: tech-writer
+        action: write_api_documentation
+        inputs: [openapi_spec, request_examples, response_examples]
+        outputs: [api_reference, getting_started_guide]
+      - name: write_integration_guide
+        agent: tech-writer
+        action: write_integration_guide
+        inputs: [integration_map, auth_strategy]
+        outputs: [integration_guide, sdk_examples]
+        depends_on: [write_api_docs]
+    checkpoint: true
+
+transitions:
+  requirements_gathering -> api_design: auto
+  api_design -> specification_writing: auto
+  specification_writing -> design_review: requires_approval
+  design_review -> documentation: auto

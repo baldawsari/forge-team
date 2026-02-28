@@ -250,6 +250,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON viadp_audit_log (timestamp DES
 CREATE INDEX IF NOT EXISTS idx_audit_sequence ON viadp_audit_log (sequence_number);
 
 -- =============================================================================
+-- General Audit Log (all WS messages)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+    id              TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+    sequence_number INTEGER NOT NULL,
+    hash            TEXT NOT NULL,
+    previous_hash   TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
+    client_type     TEXT NOT NULL,
+    message_type    TEXT NOT NULL,
+    direction       TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    session_id      TEXT DEFAULT '',
+    agent_id        TEXT DEFAULT '',
+    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_general_audit_seq ON audit_log (sequence_number);
+CREATE INDEX IF NOT EXISTS idx_general_audit_type ON audit_log (message_type);
+CREATE INDEX IF NOT EXISTS idx_general_audit_client ON audit_log (client_id);
+CREATE INDEX IF NOT EXISTS idx_general_audit_timestamp ON audit_log (timestamp DESC);
+
+-- =============================================================================
 -- Model Configurations
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS model_configs (
@@ -262,6 +284,10 @@ CREATE TABLE IF NOT EXISTS model_configs (
     top_p           DOUBLE PRECISION DEFAULT 0.95,
     system_prompt   TEXT DEFAULT '',
     metadata        JSONB DEFAULT '{}'::jsonb,
+    daily_cap_usd   DOUBLE PRECISION NOT NULL DEFAULT 50.0,
+    weekly_cap_usd  DOUBLE PRECISION NOT NULL DEFAULT 200.0,
+    alert_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.8
+                    CHECK (alert_threshold >= 0.0 AND alert_threshold <= 1.0),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -430,24 +456,27 @@ ON CONFLICT (id) DO UPDATE SET
     config = EXCLUDED.config;
 
 -- Seed model configs for all agents
-INSERT INTO model_configs (agent_id, primary_model, fallback_models, temperature, max_tokens) VALUES
-    ('bmad-master', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.3, 16384),
-    ('product-owner', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.4, 8192),
-    ('business-analyst', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.3, 8192),
-    ('scrum-master', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.3, 4096),
-    ('architect', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.2, 16384),
-    ('ux-designer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.5, 8192),
-    ('frontend-dev', 'claude-sonnet-4.6', '["gemini-3.1-pro"]'::jsonb, 0.2, 16384),
-    ('backend-dev', 'claude-sonnet-4.6', '["gemini-3.1-pro"]'::jsonb, 0.2, 16384),
-    ('qa-architect', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.2, 8192),
-    ('devops-engineer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.2, 8192),
-    ('security-specialist', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.1, 16384),
-    ('tech-writer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.4, 8192)
+INSERT INTO model_configs (agent_id, primary_model, fallback_models, temperature, max_tokens, daily_cap_usd, weekly_cap_usd, alert_threshold) VALUES
+    ('bmad-master', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.3, 16384, 30.0, 150.0, 0.8),
+    ('product-owner', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.4, 8192, 20.0, 100.0, 0.8),
+    ('business-analyst', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.3, 8192, 20.0, 100.0, 0.8),
+    ('scrum-master', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.3, 4096, 5.0, 25.0, 0.8),
+    ('architect', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.2, 16384, 50.0, 250.0, 0.8),
+    ('ux-designer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.5, 8192, 15.0, 75.0, 0.8),
+    ('frontend-dev', 'claude-sonnet-4.6', '["gemini-3.1-pro"]'::jsonb, 0.2, 16384, 30.0, 150.0, 0.8),
+    ('backend-dev', 'claude-sonnet-4.6', '["gemini-3.1-pro"]'::jsonb, 0.2, 16384, 50.0, 250.0, 0.8),
+    ('qa-architect', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.2, 8192, 40.0, 200.0, 0.8),
+    ('devops-engineer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.2, 8192, 20.0, 100.0, 0.8),
+    ('security-specialist', 'gemini-3.1-pro', '["claude-sonnet-4.6"]'::jsonb, 0.1, 16384, 40.0, 200.0, 0.8),
+    ('tech-writer', 'gemini-2.0-flash', '["gemini-3.1-pro"]'::jsonb, 0.4, 8192, 15.0, 75.0, 0.8)
 ON CONFLICT (agent_id) DO UPDATE SET
     primary_model = EXCLUDED.primary_model,
     fallback_models = EXCLUDED.fallback_models,
     temperature = EXCLUDED.temperature,
-    max_tokens = EXCLUDED.max_tokens;
+    max_tokens = EXCLUDED.max_tokens,
+    daily_cap_usd = EXCLUDED.daily_cap_usd,
+    weekly_cap_usd = EXCLUDED.weekly_cap_usd,
+    alert_threshold = EXCLUDED.alert_threshold;
 
 -- Initialize trust scores for all agents
 INSERT INTO trust_scores (agent_id, score, alpha, beta) VALUES

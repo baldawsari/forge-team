@@ -1,0 +1,110 @@
+name: Sprint Retrospective
+version: "1.0"
+description: Structured sprint retrospective workflow for continuous team improvement
+
+phases:
+  - name: data_collection
+    display_name: "Data Collection"
+    display_name_ar: "جمع البيانات"
+    agents: [scrum-master]
+    steps:
+      - name: gather_sprint_data
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: gather_sprint_metrics
+        outputs: [sprint_velocity, burndown_data, completion_rate, blockers_log]
+      - name: collect_team_feedback
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: collect_team_feedback
+        outputs: [feedback_responses, satisfaction_scores, improvement_suggestions]
+        parallel: true
+    checkpoint: true
+
+  - name: metric_analysis
+    display_name: "Metric Analysis"
+    display_name_ar: "تحليل المقاييس"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: analyze_velocity
+        agent: scrum-master
+        action: analyze_sprint_velocity
+        inputs: [sprint_velocity, burndown_data, completion_rate]
+        outputs: [velocity_trends, capacity_analysis, predictability_score]
+      - name: analyze_delivery
+        agent: product-owner
+        action: analyze_delivery_quality
+        inputs: [completion_rate, blockers_log]
+        outputs: [delivery_report, quality_metrics, scope_changes]
+        parallel: true
+      - name: synthesize_findings
+        agent: scrum-master
+        action: synthesize_retro_findings
+        inputs: [velocity_trends, delivery_report, feedback_responses]
+        outputs: [retro_findings, key_themes, root_causes]
+        depends_on: [analyze_velocity, analyze_delivery]
+    checkpoint: true
+
+  - name: team_discussion
+    display_name: "Team Discussion"
+    display_name_ar: "مناقشة الفريق"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: facilitate_discussion
+        agent: scrum-master
+        action: facilitate_retro_discussion
+        inputs: [retro_findings, key_themes]
+        outputs: [discussion_notes, what_went_well, what_to_improve]
+        approval_required: true
+      - name: prioritize_improvements
+        agent: product-owner
+        action: prioritize_improvements
+        inputs: [what_to_improve, root_causes]
+        outputs: [improvement_priorities, impact_assessment]
+        depends_on: [facilitate_discussion]
+    checkpoint: true
+
+  - name: action_items
+    display_name: "Action Items"
+    display_name_ar: "بنود العمل"
+    agents: [scrum-master]
+    steps:
+      - name: define_actions
+        agent: scrum-master
+        action: define_action_items
+        inputs: [improvement_priorities, impact_assessment]
+        outputs: [action_items, owners, deadlines]
+        approval_required: true
+      - name: create_tickets
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: create_improvement_tickets
+        inputs: [action_items, owners]
+        outputs: [ticket_list, backlog_updates]
+        depends_on: [define_actions]
+    checkpoint: true
+
+  - name: followup_planning
+    display_name: "Followup Planning"
+    display_name_ar: "تخطيط المتابعة"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: schedule_followups
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: schedule_followup_reviews
+        inputs: [action_items, deadlines]
+        outputs: [followup_schedule, review_criteria]
+      - name: update_processes
+        agent: product-owner
+        action: update_team_processes
+        inputs: [action_items, improvement_priorities]
+        outputs: [process_updates, updated_guidelines, retro_summary]
+        depends_on: [schedule_followups]
+    checkpoint: true
+
+transitions:
+  data_collection -> metric_analysis: auto
+  metric_analysis -> team_discussion: auto
+  team_discussion -> action_items: requires_approval
+  action_items -> followup_planning: auto

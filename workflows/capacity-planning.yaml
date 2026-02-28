@@ -1,0 +1,115 @@
+name: Capacity Planning
+version: "1.0"
+description: Infrastructure capacity analysis, demand forecasting, and scaling strategy
+
+phases:
+  - name: current_analysis
+    display_name: "Current Capacity Analysis"
+    display_name_ar: "تحليل السعة الحالية"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: collect_metrics
+        agent: devops-engineer
+        action: gather_performance_metrics
+        outputs: [metric_baselines, resource_utilization]
+        model_override: gemini-flash-3
+      - name: identify_bottlenecks
+        agent: architect
+        model_override: claude-opus-4.6
+        action: analyze_system_bottlenecks
+        outputs: [bottleneck_report, capacity_limits]
+        parallel: true
+      - name: document_current_state
+        agent: devops-engineer
+        action: compile_capacity_baseline
+        depends_on: [collect_metrics, identify_bottlenecks]
+        outputs: [baseline_report, architecture_diagram]
+    checkpoint: true
+
+  - name: demand_forecast
+    display_name: "Demand Forecasting"
+    display_name_ar: "التنبؤ بالطلب"
+    agents: [architect, devops-engineer]
+    steps:
+      - name: analyze_growth_trends
+        agent: architect
+        action: analyze_usage_trends
+        outputs: [growth_projections, seasonal_patterns]
+      - name: model_scenarios
+        agent: architect
+        model_override: claude-opus-4.6
+        action: create_demand_models
+        depends_on: [analyze_growth_trends]
+        outputs: [demand_models, scenario_projections]
+      - name: identify_thresholds
+        agent: devops-engineer
+        action: calculate_capacity_thresholds
+        depends_on: [model_scenarios]
+        outputs: [threshold_alerts, timeline_estimates]
+    checkpoint: true
+
+  - name: scaling_plan
+    display_name: "Scaling Plan"
+    display_name_ar: "خطة التوسع"
+    agents: [architect, devops-engineer]
+    steps:
+      - name: design_scaling_strategy
+        agent: architect
+        model_override: claude-opus-4.6
+        action: design_scaling_architecture
+        outputs: [scaling_strategy, technology_recommendations]
+      - name: cost_estimation
+        agent: devops-engineer
+        action: estimate_scaling_costs
+        outputs: [cost_projections, budget_options]
+        parallel: true
+      - name: create_roadmap
+        agent: architect
+        action: build_scaling_roadmap
+        depends_on: [design_scaling_strategy, cost_estimation]
+        outputs: [scaling_roadmap, milestone_plan]
+        approval_required: true
+    checkpoint: true
+
+  - name: implementation
+    display_name: "Implementation"
+    display_name_ar: "التنفيذ"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: provision_resources
+        agent: devops-engineer
+        action: provision_infrastructure
+        outputs: [provisioned_resources, config_updates]
+      - name: implement_autoscaling
+        agent: devops-engineer
+        action: configure_autoscaling_rules
+        outputs: [autoscaling_config, scaling_policies]
+        parallel: true
+      - name: optimize_application
+        agent: backend-dev
+        action: apply_performance_optimizations
+        outputs: [optimization_changes, benchmark_results]
+        parallel: true
+    checkpoint: true
+
+  - name: monitoring
+    display_name: "Monitoring"
+    display_name_ar: "المراقبة"
+    agents: [devops-engineer]
+    steps:
+      - name: setup_capacity_dashboards
+        agent: devops-engineer
+        action: create_capacity_dashboards
+        outputs: [dashboard_config, capacity_metrics]
+      - name: configure_capacity_alerts
+        agent: devops-engineer
+        action: setup_capacity_alerts
+        outputs: [alert_rules, escalation_config]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+transitions:
+  current_analysis -> demand_forecast: auto
+  demand_forecast -> scaling_plan: requires_approval
+  scaling_plan -> implementation: auto
+  implementation -> monitoring: auto

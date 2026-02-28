@@ -18,7 +18,7 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=18789
       - DATABASE_URL=postgresql://${POSTGRES_USER:-forgeteam}:${POSTGRES_PASSWORD:-forgeteam_secret}@postgres:5432/${POSTGRES_DB:-forgeteam}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-forgeteam_redis_secret}@redis:6379
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
@@ -107,12 +107,12 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-forgeteam_redis_secret}
     restart: unless-stopped
     networks:
       - forgeteam
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-forgeteam_redis_secret}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5

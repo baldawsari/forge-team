@@ -185,6 +185,39 @@ interface SocketEvents {
     duration: string;
     timestamp: string;
   }) => void;
+  interrupt_update: (data: {
+    type: 'created' | 'approved' | 'rejected';
+    interrupt?: {
+      id: string;
+      instanceId: string;
+      agentId: string;
+      agentName: string;
+      stepId: string;
+      type: 'approval_gate' | 'human_mention' | 'confidence_low';
+      question: string;
+      context?: string;
+      confidence?: number;
+      createdAt: string;
+    };
+    interruptId?: string;
+    feedback?: string;
+    timestamp: string;
+  }) => void;
+  escalation_update: (data: {
+    type: 'created' | 'reviewed' | 'dismissed';
+    escalation?: {
+      id: string;
+      agentId: string;
+      agentName: string;
+      taskId: string;
+      taskTitle: string;
+      confidence: number;
+      reason: string;
+      createdAt: string;
+    };
+    escalationId?: string;
+    timestamp: string;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------

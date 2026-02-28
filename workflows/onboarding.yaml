@@ -1,0 +1,117 @@
+name: New Developer Onboarding
+version: "1.0"
+description: Structured onboarding workflow for new developers joining the team
+
+phases:
+  - name: orientation
+    display_name: "Orientation"
+    display_name_ar: "التوجيه والتعريف"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: welcome_briefing
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: conduct_welcome_briefing
+        outputs: [team_structure, communication_channels, meeting_schedule]
+      - name: project_overview
+        agent: product-owner
+        action: present_project_overview
+        outputs: [product_vision, roadmap_summary, key_stakeholders]
+        parallel: true
+      - name: assign_buddy
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: assign_onboarding_buddy
+        inputs: [team_structure]
+        outputs: [buddy_assignment, onboarding_checklist]
+        depends_on: [welcome_briefing]
+    checkpoint: true
+
+  - name: environment_setup
+    display_name: "Environment Setup"
+    display_name_ar: "إعداد بيئة العمل"
+    agents: [devops-engineer, tech-writer]
+    steps:
+      - name: setup_dev_env
+        agent: devops-engineer
+        action: setup_development_environment
+        outputs: [dev_env_config, tool_access, repository_access]
+      - name: provide_setup_guide
+        agent: tech-writer
+        model_override: gemini-flash-3
+        action: provide_setup_documentation
+        inputs: [dev_env_config]
+        outputs: [setup_guide, troubleshooting_faq]
+        depends_on: [setup_dev_env]
+    checkpoint: true
+
+  - name: codebase_walkthrough
+    display_name: "Codebase Walkthrough"
+    display_name_ar: "جولة في قاعدة الكود"
+    agents: [architect, tech-writer]
+    steps:
+      - name: architecture_overview
+        agent: architect
+        model_override: claude-opus-4.6
+        action: present_architecture
+        outputs: [architecture_guide, dependency_map, coding_standards]
+      - name: key_modules_tour
+        agent: architect
+        action: walkthrough_key_modules
+        inputs: [architecture_guide]
+        outputs: [module_guides, api_overview, data_flow_diagrams]
+        depends_on: [architecture_overview]
+      - name: review_documentation
+        agent: tech-writer
+        model_override: gemini-flash-3
+        action: compile_onboarding_docs
+        inputs: [architecture_guide, module_guides]
+        outputs: [onboarding_docs_package, reading_list]
+        depends_on: [key_modules_tour]
+    checkpoint: true
+
+  - name: first_task
+    display_name: "First Task Assignment"
+    display_name_ar: "المهمة الأولى"
+    agents: [scrum-master, qa-architect]
+    steps:
+      - name: assign_starter_task
+        agent: scrum-master
+        action: assign_onboarding_task
+        inputs: [onboarding_checklist, roadmap_summary]
+        outputs: [starter_task, expected_outcomes, support_resources]
+        approval_required: true
+      - name: setup_review_process
+        agent: qa-architect
+        model_override: gemini-flash-3
+        action: setup_code_review_mentoring
+        inputs: [starter_task, coding_standards]
+        outputs: [review_checklist, mentoring_plan]
+        depends_on: [assign_starter_task]
+    checkpoint: true
+
+  - name: onboarding_review
+    display_name: "Onboarding Review"
+    display_name_ar: "مراجعة التأهيل"
+    agents: [scrum-master, product-owner]
+    steps:
+      - name: collect_feedback
+        agent: scrum-master
+        model_override: gemini-flash-3
+        action: collect_onboarding_feedback
+        inputs: [onboarding_checklist, expected_outcomes]
+        outputs: [feedback_report, improvement_suggestions]
+      - name: evaluate_readiness
+        agent: product-owner
+        action: evaluate_developer_readiness
+        inputs: [feedback_report, starter_task]
+        outputs: [readiness_assessment, next_steps, training_gaps]
+        depends_on: [collect_feedback]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  orientation -> environment_setup: auto
+  environment_setup -> codebase_walkthrough: auto
+  codebase_walkthrough -> first_task: requires_approval
+  first_task -> onboarding_review: auto

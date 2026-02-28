@@ -1,0 +1,108 @@
+name: Performance Optimization
+version: "1.0"
+description: Systematic performance optimization from profiling through benchmarking and deployment
+
+phases:
+  - name: profiling
+    display_name: "Profiling"
+    display_name_ar: "التنميط والقياس"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: collect_performance_metrics
+        agent: devops-engineer
+        action: gather_performance_data
+        outputs: [baseline_metrics, resource_utilization, latency_profiles]
+      - name: profile_application
+        agent: backend-dev
+        action: run_application_profiler
+        outputs: [cpu_profile, memory_profile, io_profile]
+        parallel: true
+    checkpoint: true
+
+  - name: bottleneck_analysis
+    display_name: "Bottleneck Analysis"
+    display_name_ar: "تحليل الاختناقات"
+    agents: [backend-dev, architect]
+    steps:
+      - name: analyze_hotspots
+        agent: backend-dev
+        model_override: claude-opus-4.6
+        action: identify_performance_hotspots
+        inputs: [cpu_profile, memory_profile, io_profile]
+        outputs: [hotspot_report, critical_paths]
+      - name: analyze_architecture_bottlenecks
+        agent: architect
+        model_override: claude-opus-4.6
+        action: analyze_architectural_constraints
+        inputs: [baseline_metrics, hotspot_report]
+        outputs: [architectural_bottlenecks, scaling_recommendations]
+        depends_on: [analyze_hotspots]
+      - name: prioritize_optimizations
+        agent: backend-dev
+        action: rank_optimization_opportunities
+        inputs: [hotspot_report, architectural_bottlenecks]
+        outputs: [optimization_plan, expected_improvements]
+        depends_on: [analyze_architecture_bottlenecks]
+    checkpoint: true
+
+  - name: optimization_implementation
+    display_name: "Optimization Implementation"
+    display_name_ar: "تنفيذ التحسينات"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: implement_code_optimizations
+        agent: backend-dev
+        action: optimize_code_paths
+        inputs: [optimization_plan, critical_paths]
+        outputs: [optimized_code, optimization_changelog]
+      - name: optimize_infrastructure
+        agent: devops-engineer
+        action: tune_infrastructure
+        inputs: [scaling_recommendations, resource_utilization]
+        outputs: [infrastructure_changes, config_updates]
+        parallel: true
+    checkpoint: true
+
+  - name: benchmarking
+    display_name: "Benchmarking"
+    display_name_ar: "قياس الأداء"
+    agents: [qa-architect, backend-dev]
+    steps:
+      - name: run_benchmarks
+        agent: qa-architect
+        action: execute_performance_benchmarks
+        inputs: [optimized_code, baseline_metrics]
+        outputs: [benchmark_results, comparison_report]
+      - name: validate_improvements
+        agent: backend-dev
+        action: validate_performance_gains
+        inputs: [benchmark_results, expected_improvements]
+        outputs: [validation_report, remaining_issues]
+        depends_on: [run_benchmarks]
+    checkpoint: true
+
+  - name: deployment
+    display_name: "Deployment"
+    display_name_ar: "النشر"
+    agents: [devops-engineer, qa-architect]
+    steps:
+      - name: staged_rollout
+        agent: devops-engineer
+        action: deploy_with_canary
+        inputs: [optimized_code, infrastructure_changes]
+        outputs: [deployment_status, canary_metrics]
+        approval_required: true
+      - name: monitor_production
+        agent: qa-architect
+        model_override: gemini-flash-3
+        action: monitor_post_deploy_metrics
+        inputs: [canary_metrics, baseline_metrics]
+        outputs: [production_performance_report, final_comparison]
+        depends_on: [staged_rollout]
+    checkpoint: true
+
+transitions:
+  profiling -> bottleneck_analysis: auto
+  bottleneck_analysis -> optimization_implementation: requires_approval
+  optimization_implementation -> benchmarking: auto
+  benchmarking -> deployment: requires_approval

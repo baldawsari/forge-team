@@ -15,11 +15,13 @@ import {
   advancePhase,
   handleError,
   checkTransition,
+  viadpPreCheck,
   routeAfterStep,
   routeAfterTransition,
   routeAfterAdvance,
   routeAfterError,
   routeAfterApproval,
+  routeAfterViadp,
 } from './nodes';
 import type { NodeDeps } from './nodes';
 
@@ -36,14 +38,21 @@ export function buildWorkflowGraph(
 ) {
   const graph = new StateGraph(WorkflowState)
     // Register nodes
+    .addNode('viadpPreCheck', viadpPreCheck(deps))
     .addNode('executeStep', executeStep(deps))
     .addNode('checkApproval', checkApproval(deps))
     .addNode('advancePhase', advancePhase(deps))
     .addNode('handleError', handleError(deps))
     .addNode('checkTransition', checkTransition(deps))
 
-    // Entry edge: start -> executeStep
-    .addEdge(START, 'executeStep')
+    // Entry edge: start -> viadpPreCheck
+    .addEdge(START, 'viadpPreCheck')
+
+    // Conditional edges after viadpPreCheck
+    .addConditionalEdges('viadpPreCheck', routeAfterViadp, {
+      executeStep: 'executeStep',
+      checkApproval: 'checkApproval',
+    })
 
     // Conditional edges after each node
     .addConditionalEdges('executeStep', routeAfterStep, {
@@ -57,7 +66,7 @@ export function buildWorkflowGraph(
       advancePhase: 'advancePhase',
     })
     .addConditionalEdges('advancePhase', routeAfterAdvance, {
-      executeStep: 'executeStep',
+      viadpPreCheck: 'viadpPreCheck',
       [END]: END,
     })
     .addConditionalEdges('handleError', routeAfterError, {

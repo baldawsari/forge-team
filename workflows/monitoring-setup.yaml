@@ -1,0 +1,113 @@
+name: Monitoring & Alerting Setup
+version: "1.0"
+description: End-to-end setup of monitoring infrastructure, dashboards, and alerting rules
+
+phases:
+  - name: requirements_gathering
+    display_name: "Requirements Gathering"
+    display_name_ar: "جمع المتطلبات"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: identify_metrics
+        agent: devops-engineer
+        action: identify_key_metrics
+        outputs: [metrics_catalog, sla_targets]
+      - name: map_dependencies
+        agent: backend-dev
+        action: map_service_dependencies
+        outputs: [dependency_graph, critical_paths]
+        parallel: true
+    checkpoint: true
+
+  - name: instrumentation
+    display_name: "Instrumentation"
+    display_name_ar: "أدوات القياس"
+    agents: [backend-dev, devops-engineer]
+    steps:
+      - name: add_telemetry
+        agent: backend-dev
+        action: instrument_application_code
+        outputs: [instrumented_code, trace_config]
+      - name: configure_collectors
+        agent: devops-engineer
+        action: setup_metric_collectors
+        outputs: [collector_config, agent_config]
+        parallel: true
+      - name: validate_data_flow
+        agent: devops-engineer
+        action: verify_metric_ingestion
+        depends_on: [add_telemetry, configure_collectors]
+        outputs: [validation_report, data_flow_diagram]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+  - name: dashboard_creation
+    display_name: "Dashboard Creation"
+    display_name_ar: "إنشاء لوحات المراقبة"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: design_dashboards
+        agent: devops-engineer
+        action: design_dashboard_layouts
+        outputs: [dashboard_specs, widget_definitions]
+      - name: build_dashboards
+        agent: devops-engineer
+        action: create_dashboards
+        depends_on: [design_dashboards]
+        outputs: [dashboard_configs, dashboard_urls]
+      - name: create_runbooks
+        agent: backend-dev
+        action: write_operational_runbooks
+        outputs: [runbook_documents, escalation_procedures]
+        parallel: true
+    checkpoint: true
+
+  - name: alert_configuration
+    display_name: "Alert Configuration"
+    display_name_ar: "إعداد التنبيهات"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: define_alert_rules
+        agent: devops-engineer
+        action: create_alert_rules
+        outputs: [alert_rules, threshold_config]
+      - name: setup_notification_channels
+        agent: devops-engineer
+        action: configure_notifications
+        outputs: [channel_config, routing_rules]
+        parallel: true
+      - name: configure_escalation
+        agent: backend-dev
+        action: setup_escalation_policies
+        depends_on: [define_alert_rules, setup_notification_channels]
+        outputs: [escalation_policy, on_call_schedule]
+    checkpoint: true
+
+  - name: testing
+    display_name: "Testing"
+    display_name_ar: "الاختبار"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: simulate_failures
+        agent: devops-engineer
+        action: run_failure_simulations
+        outputs: [simulation_results, alert_triggers]
+        model_override: gemini-flash-3
+      - name: validate_alerts
+        agent: backend-dev
+        action: verify_alert_delivery
+        outputs: [validation_report, response_times]
+        parallel: true
+      - name: acceptance_review
+        agent: devops-engineer
+        action: review_monitoring_completeness
+        depends_on: [simulate_failures, validate_alerts]
+        outputs: [acceptance_report, gap_analysis]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  requirements_gathering -> instrumentation: auto
+  instrumentation -> dashboard_creation: auto
+  dashboard_creation -> alert_configuration: auto
+  alert_configuration -> testing: requires_approval

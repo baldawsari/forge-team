@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { CheckCircle2, Circle, PlayCircle } from "lucide-react";
+import { CheckCircle2, Circle, PlayCircle, Pause, Play } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn } from "@/lib/utils";
 import type { WorkflowPhase } from "@/lib/mock-data";
 
 interface WorkflowProgressProps {
   phases: WorkflowPhase[];
+  onPauseAll?: () => void;
+  onResumeAll?: () => void;
 }
 
 function getPhaseIcon(status: string) {
@@ -40,7 +42,7 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / (86400000));
 }
 
-export default function WorkflowProgress({ phases }: WorkflowProgressProps) {
+export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: WorkflowProgressProps) {
   const { locale, t, direction } = useLocale();
   const isAr = locale === "ar";
 
@@ -80,9 +82,25 @@ export default function WorkflowProgress({ phases }: WorkflowProgressProps) {
         <h2 className="text-sm font-semibold text-text-primary">
           {t("workflow.title")}
         </h2>
-        <span className="text-xs text-accent font-semibold ltr-nums">
-          {totalProgress}%
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onPauseAll}
+            className="text-[10px] px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 transition-colors flex items-center gap-1 font-medium"
+          >
+            <Pause size={10} />
+            {t("workflow.pauseAll")}
+          </button>
+          <button
+            onClick={onResumeAll}
+            className="text-[10px] px-2.5 py-1 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 border border-green-500/20 transition-colors flex items-center gap-1 font-medium"
+          >
+            <Play size={10} />
+            {t("workflow.resumeAll")}
+          </button>
+          <span className="text-xs text-accent font-semibold ltr-nums">
+            {totalProgress}%
+          </span>
+        </div>
       </div>
 
       {/* Overall progress bar */}

@@ -17,6 +17,7 @@ import {
   Moon,
   Languages,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { useLocale } from "@/lib/locale-context";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ const navItems = [
   { id: "workflows", icon: GitBranch, labelKey: "nav.workflows" },
   { id: "memory", icon: Brain, labelKey: "nav.memory" },
   { id: "modelsCost", icon: DollarSign, labelKey: "nav.modelsCost" },
+  { id: "escalations", icon: AlertTriangle, labelKey: "nav.escalations" },
   { id: "viadpAudit", icon: Shield, labelKey: "nav.viadpAudit" },
   { id: "settings", icon: Settings, labelKey: "nav.settings" },
 ];

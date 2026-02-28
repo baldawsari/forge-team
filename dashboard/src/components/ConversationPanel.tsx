@@ -114,6 +114,20 @@ const ARABIC_AGENT_NAME_MAP: Record<string, string> = {
   "الكل": "broadcast",
 };
 
+function highlightMentions(text: string): React.ReactNode {
+  const parts = text.split(/(@human|@إنسان)/gi);
+  return parts.map((part, i) => {
+    if (/^@(human|إنسان)$/i.test(part)) {
+      return (
+        <span key={i} className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold text-xs">
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
 function parseMentions(text: string): string | null {
   const mentionRegex = /@([\w-]+|[\u0600-\u06FF]+)/;
   const match = text.match(mentionRegex);
@@ -677,7 +691,7 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                               )}
                             >
                               <p className="text-xs text-text-primary leading-relaxed" dir="auto">
-                                {msg.content}
+                                {highlightMentions(msg.content)}
                               </p>
                             </div>
                           </div>
@@ -708,7 +722,7 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                               </span>
                             </div>
                             <p className="text-[12px] text-text-secondary leading-relaxed" dir="auto">
-                              {msg.content}
+                              {highlightMentions(msg.content)}
                             </p>
                             {ttsButton(msg)}
                           </div>
@@ -814,7 +828,7 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                                     </div>
                                   )}
                                   <p className="text-xs text-text-secondary leading-relaxed" dir="auto">
-                                    {msg.content}
+                                    {highlightMentions(msg.content)}
                                   </p>
                                   {ttsButton(msg)}
                                 </div>
@@ -1112,7 +1126,7 @@ export default function ConversationPanel({ agents }: ConversationPanelProps) {
                           )}
                           dir="auto"
                         >
-                          {msg.content}
+                          {highlightMentions(msg.content)}
                         </div>
                         <span className={cn(
                           "text-[9px] text-text-muted/40 ltr-nums mt-0.5 block",

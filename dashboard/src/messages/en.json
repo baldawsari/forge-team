@@ -13,7 +13,8 @@
     "viadpAudit": "VIADP Audit",
     "settings": "Settings",
     "conversation": "Conversation",
-    "voiceTranscripts": "Voice Transcripts"
+    "voiceTranscripts": "Voice Transcripts",
+    "escalations": "Escalations"
   },
   "stats": {
     "activeTasks": "Active Tasks",
@@ -92,7 +93,13 @@
     "deploy": "Deploy",
     "complete": "Complete",
     "active": "Active",
-    "pending": "Pending"
+    "pending": "Pending",
+    "pauseAll": "Pause All",
+    "resumeAll": "Resume All",
+    "paused": "Paused",
+    "resumed": "Resumed",
+    "pause": "Pause",
+    "resume": "Resume"
   },
   "cost": {
     "title": "Models & Cost",
@@ -220,6 +227,42 @@
     "noTranscripts": "No transcripts found",
     "sttLabel": "User \u2192 System",
     "ttsLabel": "System \u2192 User"
+  },
+  "interrupt": {
+    "title": "Pending Approvals",
+    "approvalGate": "Approval Gate",
+    "humanMention": "@human Mention",
+    "confidenceLow": "Low Confidence",
+    "approve": "Approve",
+    "reject": "Reject",
+    "feedbackPlaceholder": "Reason for rejection...",
+    "noInterrupts": "No pending approvals",
+    "newInterrupt": "New approval request from",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "pendingCount": "pending approvals"
+  },
+  "escalation": {
+    "title": "Escalation Queue",
+    "badge": "Needs Review",
+    "pending": "Pending",
+    "reviewed": "Reviewed",
+    "dismissed": "Dismissed",
+    "confidence": "Confidence",
+    "reason": "Reason",
+    "review": "Review",
+    "dismiss": "Dismiss",
+    "feedbackPlaceholder": "Your feedback...",
+    "noEscalations": "No escalations",
+    "threshold": "Auto-escalation threshold: 85%"
+  },
+  "takeover": {
+    "takeOver": "Take Over",
+    "release": "Release Control",
+    "controlling": "You are controlling",
+    "messagePlaceholder": "Type as this agent...",
+    "send": "Send as Agent",
+    "humanControlled": "Human Controlled"
   },
   "partyMode": {
     "title": "Party Mode",

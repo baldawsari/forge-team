@@ -1,0 +1,106 @@
+name: Development Environment Setup
+version: "1.0"
+description: Provisioning and configuration of development environments for team productivity
+
+phases:
+  - name: requirements_gathering
+    display_name: "Requirements Gathering"
+    display_name_ar: "جمع المتطلبات"
+    agents: [devops-engineer, architect]
+    steps:
+      - name: assess_team_needs
+        agent: devops-engineer
+        action: survey_development_requirements
+        outputs: [requirements_list, tool_preferences]
+      - name: define_environment_specs
+        agent: architect
+        action: specify_environment_standards
+        outputs: [environment_specs, technology_stack, version_requirements]
+    checkpoint: true
+
+  - name: provisioning
+    display_name: "Provisioning"
+    display_name_ar: "التزويد والإعداد"
+    agents: [devops-engineer]
+    steps:
+      - name: create_infrastructure
+        agent: devops-engineer
+        action: provision_dev_infrastructure
+        outputs: [infrastructure_config, resource_ids]
+      - name: setup_repositories
+        agent: devops-engineer
+        action: configure_source_repositories
+        outputs: [repo_structure, branch_policies]
+        parallel: true
+      - name: setup_databases
+        agent: devops-engineer
+        action: provision_dev_databases
+        outputs: [database_configs, seed_data]
+        parallel: true
+    checkpoint: true
+
+  - name: configuration
+    display_name: "Configuration"
+    display_name_ar: "الإعداد والتكوين"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: configure_dev_tools
+        agent: devops-engineer
+        action: install_development_tools
+        outputs: [tool_config, ide_settings]
+      - name: setup_local_services
+        agent: backend-dev
+        action: configure_local_service_stack
+        outputs: [docker_compose_config, service_endpoints]
+        parallel: true
+      - name: configure_secrets
+        agent: devops-engineer
+        action: setup_secret_management
+        outputs: [vault_config, env_template]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+  - name: testing
+    display_name: "Environment Testing"
+    display_name_ar: "اختبار البيئة"
+    agents: [devops-engineer, backend-dev]
+    steps:
+      - name: validate_environment
+        agent: devops-engineer
+        action: run_environment_validation
+        outputs: [validation_results, connectivity_report]
+        model_override: gemini-flash-3
+      - name: test_workflows
+        agent: backend-dev
+        action: verify_development_workflows
+        outputs: [workflow_test_results, build_test_results]
+        parallel: true
+      - name: acceptance_check
+        agent: devops-engineer
+        action: finalize_environment_setup
+        depends_on: [validate_environment, test_workflows]
+        outputs: [acceptance_report, known_issues]
+        approval_required: true
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer, devops-engineer]
+    steps:
+      - name: write_setup_guide
+        agent: tech-writer
+        action: create_onboarding_guide
+        outputs: [setup_guide, faq_document]
+      - name: document_architecture
+        agent: devops-engineer
+        action: document_environment_architecture
+        outputs: [architecture_docs, troubleshooting_guide]
+        parallel: true
+    checkpoint: true
+
+transitions:
+  requirements_gathering -> provisioning: auto
+  provisioning -> configuration: auto
+  configuration -> testing: auto
+  testing -> documentation: requires_approval

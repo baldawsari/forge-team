@@ -29,6 +29,79 @@ export interface NodeDeps {
 }
 
 // ---------------------------------------------------------------------------
+// viadpPreCheck
+// ---------------------------------------------------------------------------
+
+/**
+ * Run VIADP delegation assessment before each phase begins.
+ * If risk is critical, pause for human approval.
+ */
+export function viadpPreCheck(deps: NodeDeps) {
+  return (state: WorkflowStateType): Partial<WorkflowStateType> => {
+    const { definition, currentPhaseIndex } = state;
+    const phase = definition.phases[currentPhaseIndex];
+    if (!phase || phase.steps.length === 0) {
+      return { viadpContext: null };
+    }
+
+    const firstStep = phase.steps[0];
+    const agentId = firstStep.agent;
+
+    console.log(
+      `[LangGraph] viadpPreCheck: phase="${phase.name}" agent="${agentId}"`
+    );
+
+    // Run VIADP delegation assessment
+    const assessment = deps.viadpEngine.assessDelegation(
+      'bmad-master' as any,
+      agentId as any,
+      `Execute phase "${phase.name}"`,
+      phase.steps.map(s => s.action)
+    );
+
+    // If risk is critical, pause for human approval
+    if (assessment.riskLevel === 'critical') {
+      console.log(
+        `[LangGraph] viadpPreCheck: CRITICAL risk for phase="${phase.name}" — pausing`
+      );
+      return {
+        viadpContext: {
+          riskLevel: assessment.riskLevel,
+          capabilityScore: assessment.capabilityScore,
+        },
+        waitingForApproval: true,
+        status: 'waiting_approval',
+        approvalRequest: {
+          id: crypto.randomUUID(),
+          workflowInstanceId: state.instanceId,
+          phaseName: phase.name,
+          stepName: null,
+          description: `VIADP: Critical risk detected for phase "${phase.name}". Human approval required.`,
+          status: 'pending',
+          requestedBy: 'system',
+          resolvedBy: null,
+          comment: null,
+          requestedAt: new Date().toISOString(),
+          resolvedAt: null,
+          context: { viadpAssessment: assessment },
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Store VIADP context for use during step execution
+    return {
+      viadpContext: {
+        riskLevel: assessment.riskLevel,
+        capabilityScore: assessment.capabilityScore,
+        delegationApproved: true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  };
+}
+
+// ---------------------------------------------------------------------------
 // executeStep
 // ---------------------------------------------------------------------------
 
@@ -79,6 +152,14 @@ export function executeStep(deps: NodeDeps) {
       }
     }
 
+    // Apply per-step model override from YAML definition
+    const routedModel: string | null = step.model_override ?? null;
+    if (step.model_override) {
+      console.log(
+        `[LangGraph] executeStep: applying modelOverride="${step.model_override}" for step="${step.name}"`
+      );
+    }
+
     const result: StepResult = {
       success: true,
       outputs,
@@ -87,7 +168,7 @@ export function executeStep(deps: NodeDeps) {
         `[${step.agent}] Produced outputs: ${step.outputs?.join(', ') || 'none'}.`,
       ],
       durationMs: 0,
-      modelUsed: step.model_override ?? null,
+      modelUsed: routedModel,
       tokenUsage: null,
     };
 
@@ -377,11 +458,22 @@ export function routeAfterTransition(state: WorkflowStateType): string {
 
 /**
  * Route after advancePhase: if completed, go to END. Otherwise loop
- * back to executeStep for the next phase.
+ * back to viadpPreCheck for the next phase.
  */
 export function routeAfterAdvance(state: WorkflowStateType): string {
   if (state.status === 'completed' || state.status === 'failed') {
     return '__end__';
+  }
+  return 'viadpPreCheck';
+}
+
+/**
+ * Route after viadpPreCheck: if critical risk requires approval, go to
+ * checkApproval. Otherwise proceed to executeStep.
+ */
+export function routeAfterViadp(state: WorkflowStateType): string {
+  if (state.waitingForApproval) {
+    return 'checkApproval';
   }
   return 'executeStep';
 }

@@ -1,0 +1,113 @@
+name: Accessibility Audit (WCAG)
+version: "1.0"
+description: Comprehensive WCAG accessibility audit with automated and manual testing
+
+phases:
+  - name: scope_definition
+    display_name: "Scope Definition"
+    display_name_ar: "تحديد النطاق"
+    agents: [ux-designer, qa-architect]
+    steps:
+      - name: define_audit_scope
+        agent: ux-designer
+        action: identify_audit_targets
+        outputs: [page_inventory, user_flow_list, wcag_level_target]
+      - name: establish_criteria
+        agent: qa-architect
+        action: define_success_criteria
+        outputs: [wcag_criteria_checklist, test_matrix]
+    checkpoint: true
+
+  - name: automated_scanning
+    display_name: "Automated Scanning"
+    display_name_ar: "الفحص الآلي"
+    agents: [qa-architect, frontend-dev]
+    steps:
+      - name: run_axe_scans
+        agent: qa-architect
+        action: execute_automated_a11y_scans
+        outputs: [scan_results, violation_list]
+        model_override: gemini-flash-3
+      - name: run_lighthouse_audit
+        agent: frontend-dev
+        action: run_lighthouse_accessibility
+        outputs: [lighthouse_scores, performance_metrics]
+        model_override: gemini-flash-3
+        parallel: true
+      - name: consolidate_findings
+        agent: qa-architect
+        action: merge_scan_results
+        depends_on: [run_axe_scans, run_lighthouse_audit]
+        outputs: [consolidated_report, severity_breakdown]
+    checkpoint: true
+
+  - name: manual_review
+    display_name: "Manual Review"
+    display_name_ar: "المراجعة اليدوية"
+    agents: [ux-designer, frontend-dev]
+    steps:
+      - name: keyboard_navigation
+        agent: ux-designer
+        action: test_keyboard_accessibility
+        outputs: [keyboard_report, focus_order_issues]
+      - name: screen_reader_testing
+        agent: ux-designer
+        action: test_screen_reader_compatibility
+        outputs: [screen_reader_report, aria_issues]
+        parallel: true
+      - name: color_contrast_review
+        agent: frontend-dev
+        action: audit_color_contrast
+        outputs: [contrast_report, color_violations]
+        parallel: true
+    checkpoint: true
+
+  - name: remediation
+    display_name: "Remediation"
+    display_name_ar: "المعالجة والإصلاح"
+    agents: [frontend-dev, ux-designer]
+    steps:
+      - name: prioritize_fixes
+        agent: ux-designer
+        action: prioritize_a11y_issues
+        outputs: [fix_priority_list, effort_estimates]
+      - name: implement_fixes
+        agent: frontend-dev
+        action: apply_accessibility_fixes
+        depends_on: [prioritize_fixes]
+        outputs: [fixed_components, code_changes]
+      - name: verify_fixes
+        agent: frontend-dev
+        action: retest_fixed_issues
+        depends_on: [implement_fixes]
+        outputs: [verification_results, remaining_issues]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+  - name: compliance_report
+    display_name: "Compliance Report"
+    display_name_ar: "تقرير الامتثال"
+    agents: [qa-architect, ux-designer]
+    steps:
+      - name: generate_vpat
+        agent: qa-architect
+        action: create_vpat_document
+        outputs: [vpat_document, conformance_level]
+      - name: final_report
+        agent: ux-designer
+        action: compile_accessibility_report
+        outputs: [accessibility_report, recommendations]
+        parallel: true
+      - name: approve_report
+        agent: qa-architect
+        action: review_compliance_status
+        depends_on: [generate_vpat, final_report]
+        outputs: [approval_status, certification_readiness]
+        approval_required: true
+    checkpoint: true
+
+transitions:
+  scope_definition -> automated_scanning: auto
+  automated_scanning -> manual_review: auto
+  manual_review -> remediation: requires_approval
+  remediation -> compliance_report: auto

@@ -1,0 +1,116 @@
+name: Release Management
+version: "1.0"
+description: Structured release management from planning through post-release monitoring
+
+phases:
+  - name: release_planning
+    display_name: "Release Planning"
+    display_name_ar: "تخطيط الإصدار"
+    agents: [scrum-master, devops-engineer, qa-architect]
+    steps:
+      - name: define_release_scope
+        agent: scrum-master
+        action: define_release_contents
+        outputs: [release_scope, feature_list, changelog_draft]
+      - name: assess_release_risk
+        agent: qa-architect
+        action: evaluate_release_risks
+        outputs: [risk_assessment, test_requirements]
+        parallel: true
+      - name: create_release_plan
+        agent: scrum-master
+        action: build_release_schedule
+        depends_on: [define_release_scope, assess_release_risk]
+        outputs: [release_plan, rollback_criteria]
+    checkpoint: true
+
+  - name: staging
+    display_name: "Staging Deployment"
+    display_name_ar: "النشر التجريبي"
+    agents: [devops-engineer]
+    steps:
+      - name: prepare_artifacts
+        agent: devops-engineer
+        action: build_release_artifacts
+        outputs: [release_artifacts, version_tag]
+      - name: deploy_to_staging
+        agent: devops-engineer
+        action: deploy_staging_environment
+        depends_on: [prepare_artifacts]
+        outputs: [staging_url, deployment_log]
+      - name: verify_staging
+        agent: devops-engineer
+        action: run_smoke_tests
+        depends_on: [deploy_to_staging]
+        outputs: [smoke_test_results, staging_health]
+        model_override: gemini-flash-3
+    checkpoint: true
+
+  - name: validation
+    display_name: "Validation"
+    display_name_ar: "التحقق من الصلاحية"
+    agents: [qa-architect, devops-engineer]
+    steps:
+      - name: regression_testing
+        agent: qa-architect
+        action: execute_regression_suite
+        outputs: [test_results, regression_report]
+      - name: performance_testing
+        agent: qa-architect
+        model_override: claude-opus-4.6
+        action: run_performance_tests
+        outputs: [performance_report, benchmark_comparison]
+        parallel: true
+      - name: release_sign_off
+        agent: qa-architect
+        action: approve_release_quality
+        depends_on: [regression_testing, performance_testing]
+        outputs: [sign_off_report, go_no_go_decision]
+        approval_required: true
+    checkpoint: true
+
+  - name: release_execution
+    display_name: "Release Execution"
+    display_name_ar: "تنفيذ الإصدار"
+    agents: [devops-engineer, scrum-master]
+    steps:
+      - name: deploy_production
+        agent: devops-engineer
+        action: execute_production_deployment
+        outputs: [deployment_status, production_url]
+        approval_required: true
+      - name: verify_deployment
+        agent: devops-engineer
+        action: validate_production_health
+        depends_on: [deploy_production]
+        outputs: [health_check_results, rollback_status]
+        model_override: gemini-flash-3
+      - name: announce_release
+        agent: scrum-master
+        action: send_release_notification
+        depends_on: [verify_deployment]
+        outputs: [release_notes, notification_status]
+    checkpoint: true
+
+  - name: post_release_monitoring
+    display_name: "Post-Release Monitoring"
+    display_name_ar: "مراقبة ما بعد الإصدار"
+    agents: [devops-engineer, qa-architect]
+    steps:
+      - name: monitor_metrics
+        agent: devops-engineer
+        action: track_post_release_metrics
+        outputs: [metrics_report, anomaly_alerts]
+        model_override: gemini-flash-3
+      - name: collect_feedback
+        agent: qa-architect
+        action: gather_user_feedback
+        outputs: [feedback_summary, issue_tracker]
+        parallel: true
+    checkpoint: true
+
+transitions:
+  release_planning -> staging: auto
+  staging -> validation: auto
+  validation -> release_execution: requires_approval
+  release_execution -> post_release_monitoring: auto

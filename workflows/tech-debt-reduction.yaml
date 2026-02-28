@@ -1,0 +1,112 @@
+name: Technical Debt Reduction
+version: "1.0"
+description: Systematic technical debt identification, prioritization, resolution, and documentation
+
+phases:
+  - name: debt_audit
+    display_name: "Debt Audit"
+    display_name_ar: "تدقيق الديون التقنية"
+    agents: [architect, qa-architect]
+    steps:
+      - name: scan_code_quality
+        agent: qa-architect
+        action: run_comprehensive_code_scan
+        outputs: [quality_metrics, code_smells, duplication_report, outdated_dependencies]
+      - name: assess_architectural_debt
+        agent: architect
+        model_override: claude-opus-4.6
+        action: audit_architectural_health
+        outputs: [architecture_debt_items, coupling_analysis, pattern_violations]
+        parallel: true
+      - name: compile_debt_inventory
+        agent: architect
+        action: consolidate_debt_findings
+        inputs: [quality_metrics, code_smells, architecture_debt_items]
+        outputs: [debt_inventory, categorized_debt_items]
+        depends_on: [scan_code_quality, assess_architectural_debt]
+    checkpoint: true
+
+  - name: prioritization
+    display_name: "Prioritization"
+    display_name_ar: "تحديد الأولويات"
+    agents: [architect, product-owner]
+    steps:
+      - name: assess_business_impact
+        agent: product-owner
+        action: evaluate_debt_business_impact
+        inputs: [debt_inventory, categorized_debt_items]
+        outputs: [business_impact_scores, affected_features]
+      - name: create_prioritized_backlog
+        agent: architect
+        action: prioritize_debt_items
+        inputs: [business_impact_scores, categorized_debt_items, coupling_analysis]
+        outputs: [prioritized_backlog, effort_estimates, dependency_order]
+        depends_on: [assess_business_impact]
+    checkpoint: true
+
+  - name: debt_resolution
+    display_name: "Debt Resolution"
+    display_name_ar: "حل الديون التقنية"
+    agents: [backend-dev, frontend-dev]
+    steps:
+      - name: resolve_backend_debt
+        agent: backend-dev
+        action: fix_backend_debt_items
+        inputs: [prioritized_backlog, dependency_order]
+        outputs: [resolved_backend_items, backend_change_log]
+      - name: resolve_frontend_debt
+        agent: frontend-dev
+        action: fix_frontend_debt_items
+        inputs: [prioritized_backlog, dependency_order]
+        outputs: [resolved_frontend_items, frontend_change_log]
+        parallel: true
+      - name: update_dependencies
+        agent: backend-dev
+        action: upgrade_outdated_dependencies
+        inputs: [outdated_dependencies]
+        outputs: [updated_dependencies, compatibility_notes]
+        parallel: true
+    checkpoint: true
+
+  - name: testing
+    display_name: "Testing"
+    display_name_ar: "الاختبار"
+    agents: [qa-architect, security-specialist]
+    steps:
+      - name: regression_testing
+        agent: qa-architect
+        action: run_full_regression_suite
+        inputs: [resolved_backend_items, resolved_frontend_items, updated_dependencies]
+        outputs: [regression_results, coverage_report]
+      - name: security_validation
+        agent: security-specialist
+        action: validate_security_posture
+        inputs: [updated_dependencies, resolved_backend_items]
+        outputs: [security_scan_results, vulnerability_status]
+        parallel: true
+    checkpoint: true
+
+  - name: documentation
+    display_name: "Documentation"
+    display_name_ar: "التوثيق"
+    agents: [tech-writer, architect]
+    steps:
+      - name: document_changes
+        agent: tech-writer
+        action: document_debt_resolutions
+        inputs: [backend_change_log, frontend_change_log, compatibility_notes]
+        outputs: [change_documentation, updated_guides]
+      - name: update_debt_register
+        agent: architect
+        model_override: gemini-flash-3
+        action: update_technical_debt_register
+        inputs: [debt_inventory, resolved_backend_items, resolved_frontend_items]
+        outputs: [updated_debt_register, debt_reduction_report]
+        parallel: true
+    checkpoint: true
+
+transitions:
+  debt_audit -> prioritization: auto
+  prioritization -> debt_resolution: requires_approval
+  debt_resolution -> testing: auto
+  testing -> documentation: auto

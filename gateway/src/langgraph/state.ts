@@ -54,6 +54,8 @@ export const WorkflowState = Annotation.Root({
   updatedAt: Annotation<string>,
   /** Timestamp when the workflow completed (null if still running) */
   completedAt: Annotation<string | null>,
+  /** VIADP delegation context for the current phase */
+  viadpContext: Annotation<Record<string, unknown> | null>,
   /** The full workflow definition loaded from YAML */
   definition: Annotation<WorkflowDefinition>,
 });

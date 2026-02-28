@@ -207,6 +207,11 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
   private states: Map<AgentId, AgentState> = new Map();
   /** Queue of messages waiting to be delivered to agents */
   private messageQueue: Map<AgentId, AgentMessage[]> = new Map();
+  private takenOverAgents: Map<string, {
+    agentId: string;
+    takenOverAt: string;
+    originalStatus: string;
+  }> = new Map();
 
   constructor() {
     super();
@@ -465,5 +470,34 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
       });
     }
     return summary;
+  }
+
+  takeOverAgent(agentId: string): void {
+    const state = this.states.get(agentId as AgentId);
+    if (!state) throw new Error(`Agent ${agentId} not found`);
+    this.takenOverAgents.set(agentId, {
+      agentId,
+      takenOverAt: new Date().toISOString(),
+      originalStatus: state.status,
+    });
+    this.setAgentStatus(agentId as AgentId, 'blocked' as AgentStatus);
+  }
+
+  releaseAgent(agentId: string): void {
+    const record = this.takenOverAgents.get(agentId);
+    if (!record) throw new Error(`Agent ${agentId} is not taken over`);
+    const state = this.states.get(agentId as AgentId);
+    if (state) {
+      this.setAgentStatus(agentId as AgentId, (record.originalStatus as AgentStatus) ?? 'idle');
+    }
+    this.takenOverAgents.delete(agentId);
+  }
+
+  isAgentTakenOver(agentId: string): boolean {
+    return this.takenOverAgents.has(agentId);
+  }
+
+  getTakenOverAgents(): string[] {
+    return Array.from(this.takenOverAgents.keys());
   }
 }

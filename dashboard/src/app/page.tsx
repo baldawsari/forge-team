@@ -28,8 +28,15 @@ import {
   startTask,
   approveTask,
   rejectTask,
+  fetchEscalations,
+  pauseAllWorkflows,
+  resumeAllWorkflows,
+  takeOverAgent,
+  releaseAgent,
+  sendHumanMessage,
   type GatewayAgent,
   type ModelAssignment,
+  type Escalation,
 } from "@/lib/api";
 
 import Sidebar from "@/components/Sidebar";
@@ -43,6 +50,9 @@ import ViadpAuditLog from "@/components/ViadpAuditLog";
 import ConversationPanel from "@/components/ConversationPanel";
 import MemoryExplorer from "@/components/MemoryExplorer";
 import VoiceTranscriptViewer from "@/components/VoiceTranscriptViewer";
+import InterruptModal from "@/components/InterruptModal";
+import EscalationQueue from "@/components/EscalationQueue";
+import TakeOverBanner from "@/components/TakeOverBanner";
 import { Button } from "@/components/ui/button";
 
 // --- Agent metadata lookup for the 12 known BMAD agents ---
@@ -276,6 +286,8 @@ function DashboardContent() {
   const [todayCost, setTodayCost] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [processingTasks, setProcessingTasks] = useState<Set<string>>(new Set());
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [takenOverAgent, setTakenOverAgent] = useState<string | null>(null);
 
   // Cache model assignments and cost data for mapping
   const assignmentsRef = useRef<Record<string, ModelAssignment>>({});
@@ -340,6 +352,10 @@ function DashboardContent() {
         const mapped = delegRes.delegations.map(mapGatewayDelegation);
         setDelegations(mapped);
       }
+
+      // Fetch escalations
+      const escalRes = await fetchEscalations().catch(() => ({ escalations: [] }));
+      setEscalations(escalRes.escalations);
     } catch (err) {
       console.error("Failed to load data from gateway:", err);
       // On total failure, fall back to mock data
@@ -464,6 +480,15 @@ function DashboardContent() {
       }
     });
 
+    // Escalation updates
+    const unsubEscalation = on('escalation_update' as any, (data: any) => {
+      if (data.type === 'created' && data.escalation) {
+        setEscalations(prev => [...prev, data.escalation]);
+      } else {
+        fetchEscalations().then(r => setEscalations(r.escalations)).catch(() => {});
+      }
+    });
+
     return () => {
       unsubStatus();
       unsubTask();
@@ -472,6 +497,7 @@ function DashboardContent() {
       unsubSession();
       unsubViadp();
       unsubCost();
+      unsubEscalation();
     };
   }, [on, loadData]);
 
@@ -562,6 +588,34 @@ function DashboardContent() {
     setActiveTab("conversation");
   }, []);
 
+  const handleTakeOver = useCallback(async (agentId: string) => {
+    try {
+      await takeOverAgent(agentId);
+      setTakenOverAgent(agentId);
+    } catch (err) {
+      console.error("Failed to take over agent:", err);
+    }
+  }, []);
+
+  const handleRelease = useCallback(async () => {
+    if (!takenOverAgent) return;
+    try {
+      await releaseAgent(takenOverAgent);
+      setTakenOverAgent(null);
+    } catch (err) {
+      console.error("Failed to release agent:", err);
+    }
+  }, [takenOverAgent]);
+
+  const handleTakeOverMessage = useCallback(async (content: string) => {
+    if (!takenOverAgent) return;
+    try {
+      await sendHumanMessage(takenOverAgent, content);
+    } catch (err) {
+      console.error("Failed to send human message:", err);
+    }
+  }, [takenOverAgent]);
+
   // Computed stats
   const activeTasks = tasks.filter(
     (t) => t.column === "inProgress" || t.column === "review"
@@ -590,6 +644,7 @@ function DashboardContent() {
     memory: t("nav.memory"),
     modelsCost: t("nav.modelsCost"),
     viadpAudit: t("nav.viadpAudit"),
+    escalations: t("nav.escalations"),
     settings: t("nav.settings"),
     "voice-transcripts": t("nav.voiceTranscripts"),
   };
@@ -664,7 +719,24 @@ function DashboardContent() {
           paddingInlineStart: isMobile ? "0" : sidebarCollapsed ? "68px" : "240px",
         }}
       >
+        <InterruptModal agents={agents} />
+
         <div className="p-6 space-y-6">
+          {takenOverAgent && (() => {
+            const agent = agents.find(a => a.id === takenOverAgent);
+            if (!agent) return null;
+            return (
+              <TakeOverBanner
+                agentId={agent.id}
+                agentName={agent.name}
+                agentNameAr={agent.nameAr}
+                agentAvatar={agent.avatar}
+                onRelease={handleRelease}
+                onSendMessage={handleTakeOverMessage}
+              />
+            );
+          })()}
+
           {/* Connection status indicator */}
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold text-text-primary">
@@ -712,14 +784,28 @@ function DashboardContent() {
 
                 {/* Agent status grid - right sidebar */}
                 <div className="lg:col-span-1">
-                  <AgentStatusGrid agents={agents} />
+                  <AgentStatusGrid
+                    agents={agents}
+                    escalations={escalations}
+                    takenOverAgents={takenOverAgent ? [takenOverAgent] : []}
+                    onTakeOver={handleTakeOver}
+                    onRelease={handleRelease}
+                  />
                 </div>
               </div>
 
               {/* Bottom row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <MessageFeed messages={messages} />
-                <WorkflowProgress phases={workflowPhases} />
+                <WorkflowProgress
+                  phases={workflowPhases}
+                  onPauseAll={async () => {
+                    try { await pauseAllWorkflows(); } catch (err) { console.error(err); }
+                  }}
+                  onResumeAll={async () => {
+                    try { await resumeAllWorkflows(); } catch (err) { console.error(err); }
+                  }}
+                />
               </div>
             </>
           )}
@@ -792,7 +878,15 @@ function DashboardContent() {
 
           {/* Workflows view */}
           {activeTab === "workflows" && (
-            <WorkflowProgress phases={workflowPhases} />
+            <WorkflowProgress
+              phases={workflowPhases}
+              onPauseAll={async () => {
+                try { await pauseAllWorkflows(); } catch (err) { console.error(err); }
+              }}
+              onResumeAll={async () => {
+                try { await resumeAllWorkflows(); } catch (err) { console.error(err); }
+              }}
+            />
           )}
 
           {/* Memory view */}
@@ -813,6 +907,11 @@ function DashboardContent() {
               dailyBudget={dailyBudget}
               todayCost={todayCost}
             />
+          )}
+
+          {/* Escalations view */}
+          {activeTab === "escalations" && (
+            <EscalationQueue agents={agents} />
           )}
 
           {/* VIADP Audit view */}
