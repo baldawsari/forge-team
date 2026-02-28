@@ -577,3 +577,39 @@ CREATE INDEX IF NOT EXISTS idx_delegations_status_created
     ON viadp_delegations (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_delegation_timestamp
     ON viadp_audit_log (delegation_id, timestamp DESC);
+
+COMMENT ON TABLE viadp_audit_log IS
+  'Immutable append-only audit log for VIADP delegation protocol. '
+  'UPDATE and DELETE operations are blocked by PostgreSQL rules. '
+  'Hash chain integrity: each entry''s hash covers all prior entries.';
+
+-- Ensure sequence numbers are monotonically increasing
+CREATE OR REPLACE FUNCTION enforce_audit_sequence()
+RETURNS TRIGGER AS $$
+DECLARE
+  max_seq INTEGER;
+  last_hash TEXT;
+BEGIN
+  SELECT COALESCE(MAX(sequence_number), 0), COALESCE(
+    (SELECT hash FROM viadp_audit_log ORDER BY sequence_number DESC LIMIT 1),
+    ''
+  ) INTO max_seq, last_hash;
+
+  -- Auto-set sequence number if not provided or incorrect
+  IF NEW.sequence_number <= max_seq OR NEW.sequence_number IS NULL THEN
+    NEW.sequence_number := max_seq + 1;
+  END IF;
+
+  -- Auto-set previous_hash if not provided
+  IF NEW.previous_hash = '' OR NEW.previous_hash IS NULL THEN
+    NEW.previous_hash := last_hash;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_enforce_audit_sequence
+  BEFORE INSERT ON viadp_audit_log
+  FOR EACH ROW
+  EXECUTE FUNCTION enforce_audit_sequence();

@@ -45,6 +45,7 @@ import { registerGitTools } from './tools/git-tools';
 import { registerCITools } from './tools/ci-tools';
 import { registerBrowserTools } from './tools/browser-tools';
 import { AuditMiddleware } from './audit-middleware';
+import { StorageService } from './storage';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -130,6 +131,15 @@ console.log(`[Init] ToolRegistry initialized with ${toolRegistry.listAll().lengt
 
 const auditMiddleware = new AuditMiddleware();
 console.log('[Init] AuditMiddleware initialized');
+
+const storageService = new StorageService({
+  endpoint: process.env.MINIO_ENDPOINT ?? 'localhost:9000',
+  accessKeyId: process.env.MINIO_ACCESS_KEY ?? 'forgeteam-admin',
+  secretAccessKey: process.env.MINIO_SECRET_KEY ?? 'forgeteam-secret',
+  bucket: process.env.MINIO_BUCKET ?? 'forgeteam-artifacts',
+  useSSL: process.env.MINIO_USE_SSL === 'true',
+});
+console.log('[Init] StorageService initialized');
 
 const agentRunner = new AgentRunner({
   modelRouter,
@@ -1419,6 +1429,64 @@ app.get('/api/audit/verify', (_req, res) => {
   res.json(result);
 });
 
+// GET /api/system/sovereignty — data sovereignty configuration
+app.get('/api/system/sovereignty', (_req, res) => {
+  res.json({
+    deploymentRegion: process.env.DEPLOYMENT_REGION ?? 'riyadh',
+    dataResidency: 'sa',
+    externalApiEndpoints: [
+      { service: 'Anthropic', endpoint: 'api.anthropic.com', purpose: 'LLM inference (Claude models)', dataFlow: 'outbound-prompts-inbound-completions' },
+      { service: 'Google AI', endpoint: 'generativelanguage.googleapis.com', purpose: 'LLM inference (Gemini models)', dataFlow: 'outbound-prompts-inbound-completions' },
+      { service: 'ElevenLabs', endpoint: 'api.elevenlabs.io', purpose: 'Text-to-Speech', dataFlow: 'outbound-text-inbound-audio' },
+      { service: 'OpenAI Whisper', endpoint: 'api.openai.com', purpose: 'Speech-to-Text', dataFlow: 'outbound-audio-inbound-text' },
+    ],
+    internalServices: [
+      { service: 'PostgreSQL', host: 'postgres:5432', dataStored: 'All structured data, memory, audit logs' },
+      { service: 'Redis', host: 'redis:6379', dataStored: 'Ephemeral cache, pub/sub messages' },
+      { service: 'MinIO', host: 'minio:9000', dataStored: 'Task artifacts, documents' },
+    ],
+    compliance: {
+      dataAtRest: 'Stored in deployment region only',
+      dataInTransit: 'TLS 1.3 for all external API calls',
+      llmDataPolicy: 'Prompts sent to external LLM APIs; no persistent storage by providers (per API ToS)',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Artifact Storage Endpoints
+// ---------------------------------------------------------------------------
+
+// POST /api/artifacts/upload — upload an artifact
+app.post('/api/artifacts/upload', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+  const { sessionId, taskId, filename } = req.query as { sessionId: string; taskId: string; filename: string };
+  if (!sessionId || !taskId || !filename) {
+    return res.status(400).json({ error: 'Missing sessionId, taskId, or filename query params' });
+  }
+  const key = `${sessionId}/${taskId}/${filename}`;
+  const contentType = req.headers['content-type'] ?? 'application/octet-stream';
+  const result = await storageService.upload(key, req.body, contentType);
+  res.json(result);
+});
+
+// GET /api/artifacts/download — download an artifact
+app.get('/api/artifacts/download', async (req, res) => {
+  const { key } = req.query as { key: string };
+  if (!key) return res.status(400).json({ error: 'Missing key query param' });
+  const { body, contentType } = await storageService.download(key);
+  res.setHeader('Content-Type', contentType);
+  res.send(body);
+});
+
+// GET /api/artifacts/list — list artifacts for a task
+app.get('/api/artifacts/list', async (req, res) => {
+  const { sessionId, taskId } = req.query as { sessionId: string; taskId: string };
+  const prefix = taskId ? `${sessionId ?? ''}/${taskId}/` : `${sessionId ?? ''}/`;
+  const objects = await storageService.list(prefix);
+  res.json({ objects, timestamp: new Date().toISOString() });
+});
+
 // ---------------------------------------------------------------------------
 // Create HTTP + WebSocket Server
 // ---------------------------------------------------------------------------
@@ -2009,6 +2077,8 @@ httpServer.listen(PORT, HOST, () => {
   console.log(`  Voice TTS:     ${voiceHandler.isConfigured().tts ? 'configured' : 'not configured'}`);
   console.log(`  Arabic:        ${voiceHandler.isArabicEnabled() ? 'enabled' : 'disabled'}`);
   console.log('==========================================================');
+
+  storageService.ensureBucket().catch(err => console.warn('[Storage] Bucket init deferred:', err.message));
 });
 
 // ---------------------------------------------------------------------------

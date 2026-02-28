@@ -1,0 +1,101 @@
+global:
+  namespace: forgeteam
+  deploymentRegion: riyadh
+
+gateway:
+  replicas: 2
+  image:
+    repository: forgeteam/gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 18789
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    cpuUtilization: 70
+    memoryUtilization: 80
+
+dashboard:
+  replicas: 2
+  image:
+    repository: forgeteam/dashboard
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+postgres:
+  image: pgvector/pgvector:pg16
+  storage: 10Gi
+  storageClass: standard
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+
+redis:
+  image: redis:7-alpine
+  storage: 5Gi
+  storageClass: standard
+  maxMemory: 256mb
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+minio:
+  enabled: true
+  image: minio/minio:latest
+  storage: 20Gi
+  storageClass: standard
+  bucket: forgeteam-artifacts
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
+ingress:
+  enabled: true
+  className: nginx
+  tls: true
+  hosts:
+    dashboard: forgeteam.example.com
+    gateway: api.forgeteam.example.com
+  clusterIssuer: letsencrypt-prod
+
+networkPolicies:
+  enabled: true
+
+secrets:
+  anthropicApiKey: REPLACE_ME
+  googleAiApiKey: REPLACE_ME
+  elevenlabsApiKey: REPLACE_ME
+  whisperApiKey: REPLACE_ME
+  postgresUser: forgeteam
+  postgresPassword: CHANGE_ME_IN_PRODUCTION
+  postgresDb: forgeteam
+  minioAccessKey: forgeteam-admin
+  minioSecretKey: CHANGE_ME_IN_PRODUCTION

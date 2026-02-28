@@ -1,0 +1,13 @@
+apiVersion: v2
+name: forge-team
+description: ForgeTeam - Autonomous 12-agent SDLC platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ai
+  - agents
+  - sdlc
+  - viadp
+maintainers:
+  - name: ForgeTeam

@@ -208,6 +208,18 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
   }
 
   /**
+   * Adds an artifact key to a task's artifacts array.
+   */
+  addArtifact(taskId: string, artifactKey: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+    task.artifacts.push(artifactKey);
+    task.updatedAt = new Date().toISOString();
+    this.emitTaskEvent('task:updated', task, 'system');
+    return true;
+  }
+
+  /**
    * Deletes a task (use sparingly - prefer cancelling).
    */
   deleteTask(taskId: string): boolean {

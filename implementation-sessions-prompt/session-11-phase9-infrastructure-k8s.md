@@ -819,30 +819,30 @@ Create a team with these agents working in parallel:
 
 After all work is complete, verify:
 
-- [ ] `/forge-team/infrastructure/k8s/` directory exists with all 13 YAML files
-- [ ] Namespace is `forgeteam` across all K8s manifests
-- [ ] Gateway Deployment has 2 replicas with port 18789
-- [ ] Dashboard Deployment has 2 replicas with port 3000
-- [ ] Postgres StatefulSet uses `pgvector/pgvector:pg16` with 10Gi PVC
-- [ ] Redis StatefulSet uses `redis:7-alpine` with 5Gi PVC
-- [ ] MinIO StatefulSet uses `minio/minio:latest` with 20Gi PVC
-- [ ] HPA targets gateway with min=2, max=8, CPU target=70%
-- [ ] NetworkPolicies: default deny all + explicit allow rules for each service pair
-- [ ] Ingress has TLS configuration with cert-manager annotation
-- [ ] Ingress has WebSocket upgrade support annotations for gateway
-- [ ] `/forge-team/infrastructure/helm/forge-team/` directory has Chart.yaml, values.yaml, `_helpers.tpl`, and all templates
-- [ ] `values.yaml` parameterizes: replicas, images, storage sizes, resource limits, ingress hosts, secrets
-- [ ] MinIO service is added to `docker-compose.yml` with healthcheck, bound to 127.0.0.1
-- [ ] `minio_data` volume exists in docker-compose volumes section
-- [ ] MinIO environment variables are in gateway's docker-compose environment
-- [ ] `/forge-team/gateway/src/storage.ts` exists with `StorageService` class
-- [ ] `@aws-sdk/client-s3` is in gateway's `package.json` dependencies
-- [ ] REST endpoints exist: `POST /api/artifacts/upload`, `GET /api/artifacts/download`, `GET /api/artifacts/list`
-- [ ] `storageService.ensureBucket()` is called during gateway startup
-- [ ] `viadp_audit_log` has PostgreSQL rules preventing UPDATE and DELETE
-- [ ] Audit log sequence enforcement trigger exists in init.sql
-- [ ] `GET /api/system/sovereignty` endpoint returns deployment region and API documentation
-- [ ] `DEPLOYMENT_REGION=riyadh` is in gateway docker-compose environment
-- [ ] All Dockerfiles use `node:22-alpine` (not `node:20-alpine`)
-- [ ] Root `package.json` engines field requires `>=22.0.0`
-- [ ] No existing functionality was removed — all changes are additive
+- [x] `/forge-team/infrastructure/k8s/` directory exists with all 13 YAML files
+- [x] Namespace is `forgeteam` across all K8s manifests
+- [x] Gateway Deployment has 2 replicas with port 18789
+- [x] Dashboard Deployment has 2 replicas with port 3000
+- [x] Postgres StatefulSet uses `pgvector/pgvector:pg16` with 10Gi PVC
+- [x] Redis StatefulSet uses `redis:7-alpine` with 5Gi PVC
+- [x] MinIO StatefulSet uses `minio/minio:latest` with 20Gi PVC
+- [x] HPA targets gateway with min=2, max=8, CPU target=70%
+- [x] NetworkPolicies: default deny all + explicit allow rules for each service pair
+- [x] Ingress has TLS configuration with cert-manager annotation
+- [x] Ingress has WebSocket upgrade support annotations for gateway
+- [x] `/forge-team/infrastructure/helm/forge-team/` directory has Chart.yaml, values.yaml, `_helpers.tpl`, and all templates
+- [x] `values.yaml` parameterizes: replicas, images, storage sizes, resource limits, ingress hosts, secrets
+- [x] MinIO service is added to `docker-compose.yml` with healthcheck, bound to 127.0.0.1
+- [x] `minio_data` volume exists in docker-compose volumes section
+- [x] MinIO environment variables are in gateway's docker-compose environment
+- [x] `/forge-team/gateway/src/storage.ts` exists with `StorageService` class
+- [x] `@aws-sdk/client-s3` is in gateway's `package.json` dependencies
+- [x] REST endpoints exist: `POST /api/artifacts/upload`, `GET /api/artifacts/download`, `GET /api/artifacts/list`
+- [x] `storageService.ensureBucket()` is called during gateway startup
+- [x] `viadp_audit_log` has PostgreSQL rules preventing UPDATE and DELETE
+- [x] Audit log sequence enforcement trigger exists in init.sql
+- [x] `GET /api/system/sovereignty` endpoint returns deployment region and API documentation
+- [x] `DEPLOYMENT_REGION=riyadh` is in gateway docker-compose environment
+- [x] All Dockerfiles use `node:22-alpine` (not `node:20-alpine`)
+- [x] Root `package.json` engines field requires `>=22.0.0`
+- [x] No existing functionality was removed — all changes are additive

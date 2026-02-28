@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "forge-team.labels" . | nindent 4 }}
+    app: dashboard
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+        app.kubernetes.io/name: dashboard
+        app.kubernetes.io/component: frontend
+    spec:
+      containers:
+        - name: dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.dashboard.port }}
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXT_PUBLIC_GATEWAY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "forge-team.fullname" . }}-config
+                  key: NEXT_PUBLIC_GATEWAY_URL
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: {{ .Values.dashboard.resources.requests.memory }}
+              cpu: {{ .Values.dashboard.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.dashboard.resources.limits.memory }}
+              cpu: {{ .Values.dashboard.resources.limits.cpu }}

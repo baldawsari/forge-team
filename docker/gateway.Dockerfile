@@ -3,7 +3,7 @@
 # =============================================================================
 
 # Stage 1: Install dependencies using npm workspaces from root
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 # Copy root package.json and all workspace package.json files
@@ -16,7 +16,7 @@ COPY dashboard/package.json ./dashboard/
 RUN npm install --workspaces --include-workspace-root
 
 # Stage 2: Build / verify TypeScript
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy full node_modules from workspace install
@@ -40,7 +40,7 @@ RUN npx tsc --noEmit
 RUN npx playwright install --with-deps chromium
 
 # Stage 3: Production image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN addgroup --system --gid 1001 forgeteam && \

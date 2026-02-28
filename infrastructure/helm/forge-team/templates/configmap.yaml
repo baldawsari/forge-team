@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "forge-team.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "forge-team.labels" . | nindent 4 }}
+data:
+  NODE_ENV: "production"
+  GATEWAY_PORT: {{ .Values.gateway.port | quote }}
+  GATEWAY_HOST: "0.0.0.0"
+  DATABASE_URL: "postgresql://{{ .Values.secrets.postgresUser }}:$(POSTGRES_PASSWORD)@postgres:5432/{{ .Values.secrets.postgresDb }}"
+  REDIS_URL: "redis://redis:6379"
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_BUCKET: {{ .Values.minio.bucket | quote }}
+  MINIO_USE_SSL: "false"
+  DEPLOYMENT_REGION: {{ .Values.global.deploymentRegion | quote }}
+  DASHBOARD_PORT: {{ .Values.dashboard.port | quote }}
+  NEXT_PUBLIC_GATEWAY_URL: "http://gateway:{{ .Values.gateway.port }}"
