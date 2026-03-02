@@ -150,8 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_wf_instances_status ON workflow_instances (status
 CREATE TABLE IF NOT EXISTS memory_entries (
     id              TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     scope           TEXT NOT NULL DEFAULT 'agent'
-                    CHECK (scope IN ('company', 'team', 'project', 'agent', 'thread',
-                                      'global', 'session', 'phase', 'task')),
+                    CHECK (scope IN ('company', 'team', 'project', 'agent', 'thread')),
     agent_id        TEXT,
     project_id      TEXT,
     team_id         TEXT,
@@ -263,6 +262,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     direction       TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
     session_id      TEXT DEFAULT '',
     agent_id        TEXT DEFAULT '',
+    data            JSONB DEFAULT '{}'::jsonb,
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS model_configs (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS cost_tracking (
     id              TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
-    agent_id        TEXT NOT NULL,
+    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     session_id      TEXT,
     task_id         TEXT,
     model_used      TEXT NOT NULL,

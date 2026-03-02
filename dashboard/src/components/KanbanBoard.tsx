@@ -34,6 +34,7 @@ const columns: { id: Task["status"]; enLabel: string; arLabel: string }[] = [
   { id: "in-progress", enLabel: "In Progress", arLabel: "قيد التنفيذ" },
   { id: "review", enLabel: "Review", arLabel: "مراجعة" },
   { id: "done", enLabel: "Done", arLabel: "مكتمل" },
+  { id: "cancelled", enLabel: "Cancelled", arLabel: "ملغي" },
 ];
 
 const priorityLabels: Record<string, { en: string; ar: string }> = {
@@ -55,6 +56,8 @@ function getColumnColor(id: string): string {
       return "#8b5cf6";
     case "done":
       return "#28a745";
+    case "cancelled":
+      return "#dc3545";
     default:
       return "#6c6c80";
   }

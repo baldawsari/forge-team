@@ -12,6 +12,7 @@ interface AuditEntry {
   direction: 'inbound' | 'outbound';
   sessionId: string;
   agentId: string;
+  data: Record<string, unknown>;
 }
 
 interface AuditFilters {
@@ -47,6 +48,17 @@ export class AuditMiddleware {
 
     const hash = createHash('sha256').update(hashInput).digest('hex');
 
+    // Capture payload summary for forensic audit (strip large content fields)
+    const payloadData: Record<string, unknown> = {};
+    if (message.payload) {
+      const { content, ...rest } = message.payload;
+      Object.assign(payloadData, rest);
+      if (typeof content === 'string') {
+        payloadData.contentLength = content.length;
+        payloadData.contentPreview = content.slice(0, 200);
+      }
+    }
+
     const entry: AuditEntry = {
       id: randomUUID(),
       sequenceNumber: seq,
@@ -59,6 +71,7 @@ export class AuditMiddleware {
       direction,
       sessionId: message.sessionId ?? '',
       agentId: typeof agentId === 'string' ? agentId : '',
+      data: payloadData,
     };
 
     this.entries.push(entry);
@@ -69,9 +82,9 @@ export class AuditMiddleware {
       try {
         const { query } = await import('./db.js');
         await query(
-          `INSERT INTO audit_log (id, sequence_number, hash, previous_hash, client_id, client_type, message_type, direction, session_id, agent_id, timestamp)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [entry.id, entry.sequenceNumber, entry.hash, entry.previousHash, entry.clientId, entry.clientType, entry.messageType, entry.direction, entry.sessionId, entry.agentId, entry.timestamp]
+          `INSERT INTO audit_log (id, sequence_number, hash, previous_hash, client_id, client_type, message_type, direction, session_id, agent_id, data, timestamp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [entry.id, entry.sequenceNumber, entry.hash, entry.previousHash, entry.clientId, entry.clientType, entry.messageType, entry.direction, entry.sessionId, entry.agentId, JSON.stringify(entry.data), entry.timestamp]
         );
       } catch (err: any) {
         if (retries > 0) {

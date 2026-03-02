@@ -57,7 +57,11 @@ export class VectorStore {
 
   constructor(pool: Pool, config: VectorStoreConfig = {}) {
     this.pool = pool;
-    this.tableName = config.tableName ?? 'vector_entries';
+    const rawTableName = config.tableName ?? 'vector_entries';
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rawTableName)) {
+      throw new Error(`[VectorStore] Invalid table name: "${rawTableName}". Must be alphanumeric with underscores only.`);
+    }
+    this.tableName = rawTableName;
     this.dimensions = config.dimensions ?? 768;
     this.distanceMetric = config.distanceMetric ?? 'cosine';
     this.embeddingModel = config.embeddingModel ?? 'text-embedding-004';

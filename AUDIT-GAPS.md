@@ -334,23 +334,23 @@
 
 ---
 
-## LOW Issues
+## LOW Issues ✅ ALL DONE
 
-### L-01: VIADP Audit `limit` Param Ignored (Session 1 M8)
-### L-02: Missing "cancelled" Column in Dashboard (Session 4 B8)
-### L-03: No `process.on('unhandledRejection')` Handler (Session 6 L3)
-### L-04: SQL Injection Risk in VectorStore Table Name (Session 3 §3.6)
-### L-05: Dead Scope CHECK Values in init.sql (Session 3 §3.7)
-### L-06: audit_log Missing Data/Payload Column (Session 3 §3.8)
-### L-07: cost_tracking.agent_id Missing Foreign Key (Session 3 §3.9)
-### L-08: ~35 Unused Indexes on Never-Queried Tables (Session 3 §3.10)
-### L-09: Weak djb2 Hash for Audit Trail Integrity (Session 6 L6)
-### L-10: `NEXT_PUBLIC_WS_URL` Passed But Never Read (Session 7 §1.3)
-### L-11: Jira/Supabase/Vercel Env Vars Passed But Code Never Reads (Session 7 §1.2)
-### L-12: New Anthropic Client Created Per API Call (Session 6 M8)
-### L-13: Stale Types: `AgentRole`, `ArtifactReference`, `SDLCPipeline`, etc. (Session 5 §4)
-### L-14: Workflow RPC Socket Channel Dead Code (Session 2 §3.2)
-### L-15: `party_mode_selection` Missing `timestamp` Field (Session 2 §3.3)
+### ~~L-01: VIADP Audit `limit` Param Ignored (Session 1 M8)~~ ✅
+### ~~L-02: Missing "cancelled" Column in Dashboard (Session 4 B8)~~ ✅
+### ~~L-03: No `process.on('unhandledRejection')` Handler (Session 6 L3)~~ ✅
+### ~~L-04: SQL Injection Risk in VectorStore Table Name (Session 3 §3.6)~~ ✅
+### ~~L-05: Dead Scope CHECK Values in init.sql (Session 3 §3.7)~~ ✅
+### ~~L-06: audit_log Missing Data/Payload Column (Session 3 §3.8)~~ ✅
+### ~~L-07: cost_tracking.agent_id Missing Foreign Key (Session 3 §3.9)~~ ✅
+### ~~L-08: ~35 Unused Indexes on Never-Queried Tables (Session 3 §3.10)~~ ✅ (Phase 5 made ~13 active; remaining ~22 kept as defensive indexes — low cost, useful for ad-hoc queries)
+### ~~L-09: Weak djb2 Hash for Audit Trail Integrity (Session 6 L6)~~ ✅
+### ~~L-10: `NEXT_PUBLIC_WS_URL` Passed But Never Read (Session 7 §1.3)~~ ✅
+### ~~L-11: Jira/Supabase/Vercel Env Vars Passed But Code Never Reads (Session 7 §1.2)~~ ✅
+### ~~L-12: New Anthropic Client Created Per API Call (Session 6 M8)~~ ✅
+### ~~L-13: Stale Types: `AgentRole`, `ArtifactReference`, `SDLCPipeline`, etc. (Session 5 §4)~~ ✅
+### ~~L-14: Workflow RPC Socket Channel Dead Code (Session 2 §3.2)~~ ✅
+### ~~L-15: `party_mode_selection` Missing `timestamp` Field (Session 2 §3.3)~~ ✅
 
 ---
 
@@ -410,6 +410,21 @@ Fixes should be applied in this order, as some unblock others:
 34. ~~**H-19, H-20:** Declare missing cross-package dependencies~~ ✅
 35. ~~**M-14, M-15:** Fix CORS and Qdrant port bindings~~ ✅
 
+### Phase 9: Low-Severity Cleanup ✅ DONE
+36. ~~**L-02:** Add "cancelled" column to KanbanBoard~~ ✅
+37. ~~**L-04:** Add table name validation in VectorStore~~ ✅
+38. ~~**L-05:** Remove dead scope CHECK values from init.sql~~ ✅
+39. ~~**L-06:** Add `data JSONB` column to audit_log + persist payload in audit-middleware~~ ✅
+40. ~~**L-07:** Add FK constraint on cost_tracking.agent_id~~ ✅
+41. ~~**L-08:** Assess unused indexes (Phase 5 made ~13 active; rest kept as defensive)~~ ✅
+42. ~~**L-09:** Replace djb2 with SHA-256 in verification.ts + delegation-engine.ts~~ ✅
+43. ~~**L-10:** Remove unused `NEXT_PUBLIC_WS_URL` from docker-compose.yml~~ ✅
+44. ~~**L-11:** Remove unused Jira/Supabase/Vercel env vars from docker-compose.yml~~ ✅
+45. ~~**L-12:** Cache Anthropic client instance in agent-runner.ts~~ ✅
+46. ~~**L-13:** Remove stale types (AgentRole, ArtifactReference, SDLCPipeline, PipelineTemplate, SDLC_PHASES, SDLCPhaseId, AgentContext)~~ ✅
+47. ~~**L-14:** Remove dead workflow socket RPC channel from index.ts~~ ✅
+48. ~~**L-15:** Add `timestamp` to `party_mode_selection` event emission~~ ✅
+
 ---
 
 ## Detailed Reports
@@ -444,4 +459,6 @@ Despite the issues, the core demo path is functional:
 9. Cost tracking and per-agent budget caps work
 10. VIADP delegation/trust/verification works as standalone subsystem
 
-**What doesn't work:** Kanban drag-and-drop, automated workflows, real-time WebSocket updates (workflow, cost, escalation), data persistence across restarts, VIADP integration with task flow.
+**What doesn't work (pre-audit):** Kanban drag-and-drop, automated workflows, real-time WebSocket updates (workflow, cost, escalation), data persistence across restarts, VIADP integration with task flow.
+
+**Post-audit status:** All 72 issues (12 Critical, 25 High, 20 Medium, 15 Low) resolved across Phases 1–9. Data persistence, WebSocket events, VIADP integration, type safety, and infrastructure are now wired end-to-end.

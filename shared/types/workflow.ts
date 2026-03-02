@@ -315,35 +315,6 @@ export interface WorkflowProgress {
   waitingApproval: string[];
 }
 
-// ============================================================================
-// Legacy Pipeline Types (kept for backward compatibility)
-// ============================================================================
-
-/** Full SDLC pipeline definition */
-export interface SDLCPipeline {
-  id: string;
-  name: string;
-  description: string;
-  /** Session this pipeline belongs to */
-  sessionId: string;
-  /** Ordered phases */
-  phases: WorkflowPhase[];
-  /** Current active phase index */
-  currentPhaseIndex: number;
-  /** Overall pipeline status */
-  status: 'not-started' | 'in-progress' | 'completed' | 'failed' | 'paused';
-  /** Project-level metadata */
-  projectName: string;
-  projectDescription: string;
-  /** Timestamps */
-  createdAt: string;
-  updatedAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  /** Configuration overrides */
-  config: PipelineConfig;
-}
-
 /** Configuration for pipeline behavior */
 export interface PipelineConfig {
   /** Whether to auto-advance to next phase on completion */
@@ -358,40 +329,6 @@ export interface PipelineConfig {
   skipPhases: string[];
   /** Custom phase ordering override */
   phaseOrder: string[] | null;
-}
-
-/** Predefined SDLC phases used in the BMAD-Claw workflow */
-export const SDLC_PHASES = [
-  'discovery',
-  'requirements',
-  'architecture',
-  'design',
-  'implementation',
-  'testing',
-  'security-review',
-  'documentation',
-  'deployment',
-  'monitoring',
-] as const;
-
-export type SDLCPhaseId = (typeof SDLC_PHASES)[number];
-
-/** Template for creating a default SDLC pipeline */
-export interface PipelineTemplate {
-  id: string;
-  name: string;
-  description: string;
-  phases: {
-    phaseId: SDLCPhaseId;
-    name: string;
-    agents: AgentId[];
-    steps: {
-      name: string;
-      agent: AgentId;
-      reviewers: AgentId[];
-      acceptanceCriteria: string[];
-    }[];
-  }[];
 }
 
 // ============================================================================

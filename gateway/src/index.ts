@@ -1875,6 +1875,7 @@ io.on('connection', (socket) => {
             sessionId,
             selections: partyResult.selections,
             correlationId: message.id,
+            timestamp: new Date().toISOString(),
           });
 
           // Emit each agent response as a separate message
@@ -2022,82 +2023,6 @@ io.on('connection', (socket) => {
             agentManager.setAgentStatus(targetAgentId, 'idle');
           });
       }
-    }
-  });
-
-  // -- Workflow WebSocket Commands --
-
-  socket.on('workflow:list', () => {
-    try {
-      const definitions = workflowExecutor.listDefinitions();
-      socket.emit('workflow:list', { workflows: definitions });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to list workflows' });
-    }
-  });
-
-  socket.on('workflow:start', async (data: { workflowName: string; sessionId: string }) => {
-    try {
-      if (!data?.workflowName || !data?.sessionId) {
-        socket.emit('workflow:error', { error: 'workflowName and sessionId are required' });
-        return;
-      }
-      const instance = await workflowExecutor.startWorkflow(data.workflowName, data.sessionId);
-      socket.emit('workflow:started', { instanceId: instance.id, workflowName: data.workflowName });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to start workflow' });
-    }
-  });
-
-  socket.on('workflow:approve', async (data: { instanceId: string; comment?: string }) => {
-    try {
-      if (!data?.instanceId) {
-        socket.emit('workflow:error', { error: 'instanceId is required' });
-        return;
-      }
-      await workflowExecutor.resumeWorkflow(data.instanceId, { approved: true, comment: data.comment });
-      socket.emit('workflow:approved', { instanceId: data.instanceId });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to approve' });
-    }
-  });
-
-  socket.on('workflow:reject', async (data: { instanceId: string; comment?: string }) => {
-    try {
-      if (!data?.instanceId) {
-        socket.emit('workflow:error', { error: 'instanceId is required' });
-        return;
-      }
-      await workflowExecutor.resumeWorkflow(data.instanceId, { approved: false, reason: data.comment ?? 'Rejected' });
-      socket.emit('workflow:rejected', { instanceId: data.instanceId });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to reject' });
-    }
-  });
-
-  socket.on('workflow:pause', async (data: { instanceId: string }) => {
-    try {
-      if (!data?.instanceId) {
-        socket.emit('workflow:error', { error: 'instanceId is required' });
-        return;
-      }
-      await workflowExecutor.pauseWorkflow(data.instanceId);
-      socket.emit('workflow:paused', { instanceId: data.instanceId });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to pause' });
-    }
-  });
-
-  socket.on('workflow:resume', async (data: { instanceId: string }) => {
-    try {
-      if (!data?.instanceId) {
-        socket.emit('workflow:error', { error: 'instanceId is required' });
-        return;
-      }
-      await workflowExecutor.resumeWorkflow(data.instanceId);
-      socket.emit('workflow:resumed', { instanceId: data.instanceId });
-    } catch (error: any) {
-      socket.emit('workflow:error', { error: error?.message ?? 'Failed to resume' });
     }
   });
 

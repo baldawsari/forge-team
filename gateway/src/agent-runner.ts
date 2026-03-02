@@ -152,6 +152,9 @@ export class AgentRunner {
   /** Cache for loaded SOUL.md files — keyed by agentId */
   private soulCache: Map<AgentId, string> = new Map();
 
+  /** Cached Anthropic client instance (reused across calls) */
+  private anthropicClient: Anthropic | null = null;
+
   private escalations: EscalationRecord[] = [];
 
   /** Callback fired when a new escalation is created (wired by index.ts for socket emission) */
@@ -168,6 +171,16 @@ export class AgentRunner {
     this.toolRegistry = deps.toolRegistry ?? null;
     this.sandboxManager = deps.sandboxManager ?? null;
     this.viadpEngine = deps.viadpEngine ?? null;
+  }
+
+  /** Get or create a cached Anthropic client instance */
+  private getAnthropicClient(): Anthropic | null {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return null;
+    if (!this.anthropicClient) {
+      this.anthropicClient = new Anthropic({ apiKey, timeout: AI_API_TIMEOUT_MS });
+    }
+    return this.anthropicClient;
   }
 
   // -------------------------------------------------------------------------
@@ -664,8 +677,8 @@ export class AgentRunner {
     tools?: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>,
     toolContext?: ToolExecutionContext,
   ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    const client = this.getAnthropicClient();
+    if (!client) {
       console.warn('[AgentRunner] ANTHROPIC_API_KEY is not set');
       return {
         content:
@@ -674,8 +687,6 @@ export class AgentRunner {
         outputTokens: 0,
       };
     }
-
-    const client = new Anthropic({ apiKey, timeout: AI_API_TIMEOUT_MS });
     const apiModelId = ANTHROPIC_MODEL_MAP[modelId] ?? modelId;
 
     // Sanitize conversation history: strip any orphaned tool_use block references

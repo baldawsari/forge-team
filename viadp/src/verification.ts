@@ -6,6 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -710,13 +711,7 @@ export class VerificationEngine {
       previousHash,
     ].join('|');
 
-    // Simple hash function (in production use SHA-256)
-    let hash = 0;
-    for (let i = 0; i < payload.length; i++) {
-      const char = payload.charCodeAt(i);
-      hash = ((hash << 5) - hash + char) | 0;
-    }
-    return `h_${Math.abs(hash).toString(36).padStart(10, '0')}`;
+    return `h_${createHash('sha256').update(payload).digest('hex')}`;
   }
 }
 

@@ -118,18 +118,3 @@ export interface MemorySearchQuery {
   sortBy?: 'relevance' | 'recency' | 'importance' | 'access-count';
 }
 
-/** Aggregated memory context provided to an agent before task execution */
-export interface AgentContext {
-  /** Relevant company-wide memories */
-  companyContext: MemoryEntry[];
-  /** Thread-specific context */
-  threadContext: MemoryEntry[];
-  /** Agent's own memories */
-  agentMemories: MemoryEntry[];
-  /** Project-specific context */
-  projectContext: MemoryEntry[];
-  /** Team-specific context */
-  teamContext: MemoryEntry[];
-  /** Total token estimate for context window management */
-  estimatedTokens: number;
-}

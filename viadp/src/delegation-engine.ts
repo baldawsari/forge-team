@@ -7,6 +7,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { runDynamicAssessment } from './assessment';
 import { issueDelegationToken } from './trust-calibration';
@@ -927,14 +928,8 @@ export class DelegationEngine {
     delegator: string,
     delegate: string,
   ): string {
-    // Create a deterministic hash-based signature for token integrity.
-    // Uses a simple string-hash approach. In production, use HMAC-SHA256.
     const payload = `${tokenId}:${taskId}:${delegator}:${delegate}:${Date.now()}`;
-    let hash = 0;
-    for (let i = 0; i < payload.length; i++) {
-      const char = payload.charCodeAt(i);
-      hash = ((hash << 5) - hash + char) | 0;
-    }
-    return `sig_${Math.abs(hash).toString(36)}_${tokenId.slice(0, 8)}`;
+    const hash = createHash('sha256').update(payload).digest('hex');
+    return `sig_${hash.slice(0, 16)}_${tokenId.slice(0, 8)}`;
   }
 }

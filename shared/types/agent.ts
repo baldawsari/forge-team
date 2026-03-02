@@ -27,16 +27,6 @@ export type AgentStatus =
   | 'offline'
   | 'error';
 
-/** Human-readable agent role descriptor */
-export interface AgentRole {
-  id: AgentId;
-  name: string;
-  description: string;
-  capabilities: string[];
-  /** Which SDLC phases this agent participates in */
-  phases: string[];
-}
-
 /** Full agent configuration loaded from the agents/ directory */
 export interface AgentConfig {
   id: AgentId;
@@ -111,8 +101,8 @@ export interface AgentMessagePayload {
   content?: string;
   /** Structured data (task details, delegation tokens, etc.) */
   data?: Record<string, unknown>;
-  /** File attachments or artifact references */
-  artifacts?: ArtifactReference[];
+  /** File attachments or artifact URLs */
+  artifacts?: string[];
   /** Error information if applicable */
   error?: {
     code: string;
@@ -121,13 +111,3 @@ export interface AgentMessagePayload {
   };
 }
 
-/** Reference to an artifact produced or consumed by an agent */
-export interface ArtifactReference {
-  id: string;
-  name: string;
-  type: 'document' | 'code' | 'diagram' | 'test' | 'config' | 'other';
-  path?: string;
-  url?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-}
