@@ -163,6 +163,7 @@ const agentRunner = new AgentRunner({
   companyKBId: companyKBId ?? undefined,
   toolRegistry,
   sandboxManager,
+  viadpEngine,
 });
 console.log('[Init] AgentRunner initialized');
 
@@ -176,6 +177,7 @@ const workflowExecutor = new WorkflowExecutor({
   agentManager,
   modelRouter,
   viadpEngine,
+  agentRunner,
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam',
 });
 console.log('[Init] WorkflowExecutor initialized');
@@ -1263,6 +1265,63 @@ function autoAssignAgent(taskTitle: string, taskDescription: string): AgentId | 
   return 'bmad-master';
 }
 
+// Helper: extract code-block artifacts from agent response and upload to storage
+async function extractAndUploadArtifacts(
+  responseContent: string,
+  taskId: string,
+  taskTitle: string,
+  sessionIdParam: string,
+): Promise<string[]> {
+  const codeBlockRegex = /```(\w+)?\s*\n([\s\S]*?)```/g;
+  const langExtMap: Record<string, string> = {
+    html: '.html', css: '.css', js: '.js', javascript: '.js',
+    ts: '.ts', typescript: '.ts', tsx: '.tsx', jsx: '.jsx',
+    json: '.json', yaml: '.yaml', yml: '.yml', xml: '.xml',
+    sql: '.sql', py: '.py', python: '.py', sh: '.sh', bash: '.sh',
+    dockerfile: '.Dockerfile', md: '.md', markdown: '.md',
+    java: '.java', go: '.go', rust: '.rs', c: '.c', cpp: '.cpp',
+  };
+  const langContentType: Record<string, string> = {
+    html: 'text/html', css: 'text/css', js: 'application/javascript',
+    json: 'application/json', yaml: 'text/yaml', sql: 'text/sql',
+    xml: 'application/xml', md: 'text/markdown', py: 'text/x-python',
+  };
+
+  let blockIndex = 0;
+  let codeMatch: RegExpExecArray | null;
+  const extractedArtifacts: string[] = [];
+
+  while ((codeMatch = codeBlockRegex.exec(responseContent)) !== null) {
+    const lang = (codeMatch[1] ?? '').toLowerCase();
+    const code = codeMatch[2];
+    if (!code || code.trim().length < 10) continue;
+
+    const ext = langExtMap[lang] || '.txt';
+    const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+    const filename = blockIndex === 0
+      ? `${slug}${ext}`
+      : `${slug}-${blockIndex}${ext}`;
+    const artifactKey = `${sessionIdParam}/${taskId}/${filename}`;
+    const ct = langContentType[lang] || 'text/plain';
+
+    try {
+      await storageService.upload(artifactKey, code, ct);
+      const downloadUrl = `/api/artifacts/download?key=${encodeURIComponent(artifactKey)}`;
+      taskManager.addArtifact(taskId, downloadUrl);
+      extractedArtifacts.push(filename);
+      console.log(`[Artifacts] Saved ${filename} (${code.length} bytes) for task ${taskId}`);
+    } catch (artifactErr: any) {
+      console.warn(`[Artifacts] Failed to save ${filename}:`, artifactErr?.message);
+    }
+    blockIndex++;
+  }
+
+  if (extractedArtifacts.length > 0) {
+    console.log(`[Artifacts] Extracted ${extractedArtifacts.length} artifact(s) for task ${taskId}: ${extractedArtifacts.join(', ')}`);
+  }
+  return extractedArtifacts;
+}
+
 app.post('/api/tasks/:taskId/start', asyncHandler(async (req, res) => {
   try {
     const task = taskManager.getTask(req.params.taskId);
@@ -1292,111 +1351,141 @@ app.post('/api/tasks/:taskId/start', asyncHandler(async (req, res) => {
 
     agentManager.assignTask(assignedAgent, task.id, task.sessionId);
 
-    // Build task prompt
-    const taskPrompt =
-      `You have been assigned the following task:\n\n` +
-      `TITLE: ${task.title}\n` +
-      `DESCRIPTION: ${task.description}\n` +
-      `PRIORITY: ${task.priority}\n` +
-      `COMPLEXITY: ${task.complexity}\n` +
-      `TAGS: ${task.tags.join(', ')}\n\n` +
-      `Please analyze this task and provide your implementation plan or deliverable.`;
+    // Run VIADP delegation assessment before agent execution
+    const viadpAssessment = viadpEngine.assessDelegation(
+      'bmad-master' as AgentId,
+      assignedAgent,
+      `Execute task: ${task.title}`,
+      task.tags.length > 0 ? task.tags : ['general'],
+    );
 
-    const result = await agentRunner.processUserMessage(assignedAgent, taskPrompt, task.sessionId);
-
-    // -------------------------------------------------------------------
-    // Extract code-block artifacts from the agent response
-    // -------------------------------------------------------------------
-    const codeBlockRegex = /```(\w+)?\s*\n([\s\S]*?)```/g;
-    const langExtMap: Record<string, string> = {
-      html: '.html', css: '.css', js: '.js', javascript: '.js',
-      ts: '.ts', typescript: '.ts', tsx: '.tsx', jsx: '.jsx',
-      json: '.json', yaml: '.yaml', yml: '.yml', xml: '.xml',
-      sql: '.sql', py: '.py', python: '.py', sh: '.sh', bash: '.sh',
-      dockerfile: '.Dockerfile', md: '.md', markdown: '.md',
-      java: '.java', go: '.go', rust: '.rs', c: '.c', cpp: '.cpp',
-    };
-    const langContentType: Record<string, string> = {
-      html: 'text/html', css: 'text/css', js: 'application/javascript',
-      json: 'application/json', yaml: 'text/yaml', sql: 'text/sql',
-      xml: 'application/xml', md: 'text/markdown', py: 'text/x-python',
-    };
-
-    let blockIndex = 0;
-    let codeMatch: RegExpExecArray | null;
-    const extractedArtifacts: string[] = [];
-
-    while ((codeMatch = codeBlockRegex.exec(result.content)) !== null) {
-      const lang = (codeMatch[1] ?? '').toLowerCase();
-      const code = codeMatch[2];
-      if (!code || code.trim().length < 10) continue;
-
-      const ext = langExtMap[lang] || '.txt';
-      const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-      const filename = blockIndex === 0
-        ? `${slug}${ext}`
-        : `${slug}-${blockIndex}${ext}`;
-      const artifactKey = `${task.sessionId}/${task.id}/${filename}`;
-      const ct = langContentType[lang] || 'text/plain';
-
-      try {
-        await storageService.upload(artifactKey, code, ct);
-        const downloadUrl = `/api/artifacts/download?key=${encodeURIComponent(artifactKey)}`;
-        taskManager.addArtifact(task.id, downloadUrl);
-        extractedArtifacts.push(filename);
-        console.log(`[Artifacts] Saved ${filename} (${code.length} bytes) for task ${task.id}`);
-      } catch (artifactErr: any) {
-        console.warn(`[Artifacts] Failed to save ${filename}:`, artifactErr?.message);
-      }
-      blockIndex++;
+    if (viadpAssessment.riskLevel === 'critical') {
+      console.warn(`[TaskStart] VIADP critical risk for task ${task.id} -> ${assignedAgent}: ${viadpAssessment.riskFactors.join(', ')}`);
+      viadpEngine.createDelegationRequest({
+        from: 'bmad-master' as AgentId,
+        to: assignedAgent,
+        taskId: task.id,
+        sessionId: task.sessionId,
+        reason: `Task execution: ${task.title}`,
+        requiredCapabilities: task.tags.length > 0 ? task.tags : ['general'],
+        scope: { allowedActions: ['execute-task'], resourceLimits: {}, canRedelegate: false, allowedArtifactTypes: ['code', 'document'] },
+      });
+      taskManager.moveTask(task.id, 'backlog', 'system');
+      agentManager.completeTask(assignedAgent, task.id);
+      io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'backlog' } });
+      res.status(403).json({
+        error: 'VIADP: Critical risk detected — task requires human approval before agent execution',
+        riskLevel: viadpAssessment.riskLevel,
+        riskFactors: viadpAssessment.riskFactors,
+      });
+      return;
     }
 
-    if (extractedArtifacts.length > 0) {
-      console.log(`[Artifacts] Extracted ${extractedArtifacts.length} artifact(s) for task ${task.id}: ${extractedArtifacts.join(', ')}`);
+    if (viadpAssessment.riskLevel !== 'low') {
+      console.log(`[TaskStart] VIADP risk=${viadpAssessment.riskLevel} for task ${task.id} -> ${assignedAgent}`);
     }
 
-    // Store the agent response on the task so it persists through API polling
-    taskManager.updateTask(task.id, {
-      metadata: { agentResponse: result.content, agentModel: result.model },
-    }, assignedAgent);
+    // Emit immediate status update so dashboard shows "in-progress"
+    io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'in-progress' } });
 
-    // Move to review
-    taskManager.moveTask(task.id, 'review', assignedAgent);
-
-    // Emit socket events for real-time dashboard updates
-    const agentConfig = agentManager.getConfig(assignedAgent);
-    const responseTimestamp = new Date().toISOString();
-    const responseMessage = {
-      id: `msg-${task.id}-response`,
-      from: assignedAgent as any,
-      to: 'user' as const,
-      type: 'task.complete' as const,
-      payload: { content: result.content },
-      sessionId: task.sessionId,
-      timestamp: responseTimestamp,
-    };
-    sessionManager.addMessage(task.sessionId, responseMessage);
-    io.emit('message', {
-      id: responseMessage.id,
-      from: agentConfig?.name ?? assignedAgent,
-      to: 'user',
-      type: 'task',
-      content: result.content,
-      taskId: task.id,
-      model: result.model,
-      sessionId: task.sessionId,
-      timestamp: responseTimestamp,
-    });
-
-    io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
-
-    res.json({
+    // Return 202 Accepted immediately — agent execution runs in background
+    res.status(202).json({
       task: taskManager.getTask(task.id),
       agentId: assignedAgent,
-      response: result.content,
-      model: result.model,
+      status: 'processing',
+      message: 'Task accepted and agent is working. Results will be pushed via WebSocket.',
       timestamp: new Date().toISOString(),
     });
+
+    // Capture values for the background closure
+    const taskId = task.id;
+    const taskTitle = task.title;
+    const taskDescription = task.description;
+    const taskPriority = task.priority;
+    const taskComplexity = task.complexity;
+    const taskTags = task.tags;
+    const taskSessionId = task.sessionId;
+    const agent = assignedAgent;
+
+    // Run agent in background (fire-and-forget with error handling)
+    (async () => {
+      try {
+        const taskPrompt =
+          `You have been assigned the following task:\n\n` +
+          `TITLE: ${taskTitle}\n` +
+          `DESCRIPTION: ${taskDescription}\n` +
+          `PRIORITY: ${taskPriority}\n` +
+          `COMPLEXITY: ${taskComplexity}\n` +
+          `TAGS: ${taskTags.join(', ')}\n\n` +
+          `Please analyze this task and provide your implementation plan or deliverable.`;
+
+        const result = await agentRunner.processUserMessage(agent, taskPrompt, taskSessionId);
+
+        // Extract and upload artifacts
+        await extractAndUploadArtifacts(result.content, taskId, taskTitle, taskSessionId);
+
+        // Store the agent response on the task
+        taskManager.updateTask(taskId, {
+          metadata: { agentResponse: result.content, agentModel: result.model },
+        }, agent);
+
+        // Move to review
+        taskManager.moveTask(taskId, 'review', agent);
+
+        // Emit socket events for real-time dashboard updates
+        const agentConfig = agentManager.getConfig(agent);
+        const responseTimestamp = new Date().toISOString();
+        const responseMessage = {
+          id: `msg-${taskId}-response`,
+          from: agent as any,
+          to: 'user' as const,
+          type: 'task.complete' as const,
+          payload: { content: result.content },
+          sessionId: taskSessionId,
+          timestamp: responseTimestamp,
+        };
+        sessionManager.addMessage(taskSessionId, responseMessage);
+        io.emit('message', {
+          id: responseMessage.id,
+          from: agentConfig?.name ?? agent,
+          to: 'user',
+          type: 'task',
+          content: result.content,
+          taskId,
+          model: result.model,
+          sessionId: taskSessionId,
+          timestamp: responseTimestamp,
+        });
+
+        io.emit('task_update', {
+          type: 'moved',
+          event: { taskId, sessionId: taskSessionId, currentStatus: 'review', data: { agentResponse: result.content, agentModel: result.model } },
+        });
+
+        console.log(`[TaskStart] Background execution completed for task ${taskId}`);
+      } catch (bgError: any) {
+        console.error(`[TaskStart] Background execution failed for task ${taskId}:`, bgError?.message);
+
+        // Move task back to backlog on failure and notify dashboard
+        try { taskManager.moveTask(taskId, 'backlog', 'system'); } catch {}
+        try { agentManager.completeTask(agent, taskId); } catch {}
+
+        io.emit('task_update', {
+          type: 'error',
+          event: { taskId, sessionId: taskSessionId, currentStatus: 'backlog', data: { error: bgError?.message ?? 'Agent execution failed' } },
+        });
+        io.emit('message', {
+          id: `msg-${taskId}-error`,
+          from: 'system',
+          to: 'user',
+          type: 'error',
+          content: `Task "${taskTitle}" failed: ${bgError?.message ?? 'Unknown error'}`,
+          taskId,
+          sessionId: taskSessionId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    })();
   } catch (error: any) {
     console.error('[TaskStart] Error:', error);
     res.status(500).json({ error: error?.message ?? 'Failed to start task' });
@@ -1470,9 +1559,17 @@ app.post('/api/tasks/:taskId/reject', asyncHandler(async (req, res) => {
       const result = await agentRunner.processUserMessage(task.assignedTo, feedbackPrompt, task.sessionId);
       response = result.content;
 
+      // Extract artifacts from revised response
+      await extractAndUploadArtifacts(result.content, task.id, task.title, task.sessionId);
+
+      // Store revised response on task
+      taskManager.updateTask(task.id, {
+        metadata: { agentResponse: result.content, agentModel: result.model },
+      }, task.assignedTo);
+
       // Move back to review
       taskManager.moveTask(task.id, 'review', task.assignedTo);
-      io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review' } });
+      io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: 'review', data: { agentResponse: result.content } } });
     }
 
     res.json({

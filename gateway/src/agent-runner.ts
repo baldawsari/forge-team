@@ -26,6 +26,7 @@ import type { VectorStore } from '@forge-team/memory';
 import type { ToolRegistry } from './tools/tool-registry';
 import type { SandboxManager } from './tools/sandbox-manager';
 import type { ToolExecutionContext } from './tools/types';
+import type { VIADPEngine } from './viadp-engine';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -122,6 +123,7 @@ interface AgentRunnerDeps {
   companyKBId?: string;
   toolRegistry?: ToolRegistry;
   sandboxManager?: SandboxManager;
+  viadpEngine?: VIADPEngine;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +140,7 @@ export class AgentRunner {
   private companyKBId: string | null;
   private toolRegistry: ToolRegistry | null;
   private sandboxManager: SandboxManager | null;
+  private viadpEngine: VIADPEngine | null;
 
   /** Cache for loaded SOUL.md files — keyed by agentId */
   private soulCache: Map<AgentId, string> = new Map();
@@ -157,6 +160,7 @@ export class AgentRunner {
     this.companyKBId = deps.companyKBId ?? null;
     this.toolRegistry = deps.toolRegistry ?? null;
     this.sandboxManager = deps.sandboxManager ?? null;
+    this.viadpEngine = deps.viadpEngine ?? null;
   }
 
   // -------------------------------------------------------------------------
@@ -434,6 +438,39 @@ export class AgentRunner {
     }
 
     console.log(`[AgentRunner] ${parentAgentId} spawning sub-agent call to ${targetAgentId}`);
+
+    // Run VIADP delegation assessment if engine is available
+    if (this.viadpEngine) {
+      const assessment = this.viadpEngine.assessDelegation(
+        parentAgentId,
+        targetAgentId,
+        taskDescription,
+        ['delegation'],
+      );
+
+      if (assessment.riskLevel === 'critical') {
+        console.warn(`[AgentRunner] VIADP blocked delegation ${parentAgentId} -> ${targetAgentId}: ${assessment.riskFactors.join(', ')}`);
+        return null;
+      }
+
+      // Create a formal delegation request for audit trail
+      const delegationReq = this.viadpEngine.createDelegationRequest({
+        from: parentAgentId,
+        to: targetAgentId,
+        taskId: sessionId,
+        sessionId,
+        reason: `Sub-agent delegation: ${taskDescription.slice(0, 200)}`,
+        requiredCapabilities: ['delegation'],
+        scope: { allowedActions: ['execute-subtask'], resourceLimits: {}, canRedelegate: false, allowedArtifactTypes: ['code', 'document'] },
+      });
+
+      // Auto-accept non-critical delegations
+      this.viadpEngine.acceptDelegation(delegationReq.id);
+
+      if (assessment.riskLevel !== 'low') {
+        console.log(`[AgentRunner] VIADP risk=${assessment.riskLevel} for delegation ${parentAgentId} -> ${targetAgentId}`);
+      }
+    }
 
     const delegationPrompt =
       `You are being delegated a subtask by ${parentAgentId}. ` +

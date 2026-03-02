@@ -42,6 +42,7 @@ import type {
 import type { AgentManager } from './agent-manager';
 import type { ModelRouter } from './model-router';
 import type { VIADPEngine } from './viadp-engine';
+import type { AgentRunner } from './agent-runner';
 import { MemorySaver, type BaseCheckpointSaver } from '@langchain/langgraph';
 import { PostgresCheckpointSaver, buildWorkflowGraph } from './langgraph';
 import type { WorkflowStateType } from './langgraph';
@@ -336,6 +337,7 @@ export interface WorkflowExecutorDeps {
   modelRouter: ModelRouter;
   viadpEngine: VIADPEngine;
   databaseUrl: string;
+  agentRunner: AgentRunner;
 }
 
 /**
@@ -351,6 +353,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
   private readonly agentManager: AgentManager;
   private readonly modelRouter: ModelRouter;
   private readonly viadpEngine: VIADPEngine;
+  private readonly agentRunner: AgentRunner;
   private pendingInterrupts: Map<string, {
     id: string;
     instanceId: string;
@@ -376,6 +379,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     this.agentManager = deps.agentManager;
     this.modelRouter = deps.modelRouter;
     this.viadpEngine = deps.viadpEngine;
+    this.agentRunner = deps.agentRunner;
     this.viadpNode = createViadpDelegationNode(this.viadpEngine);
   }
 
@@ -390,6 +394,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
           agentManager: this.agentManager,
           modelRouter: this.modelRouter,
           viadpEngine: this.viadpEngine,
+          agentRunner: this.agentRunner,
         },
         this.checkpointer
       );

@@ -31,7 +31,8 @@ export interface TaskUpdateEvent {
     | "moved"
     | "assigned"
     | "completed"
-    | "cancelled";
+    | "cancelled"
+    | "error";
   event: {
     type: string;
     taskId: string;
@@ -44,6 +45,9 @@ export interface TaskUpdateEvent {
       title: string;
       assignedTo: string | null;
       priority: string;
+      agentResponse?: string;
+      agentModel?: string;
+      error?: string;
     };
   };
 }

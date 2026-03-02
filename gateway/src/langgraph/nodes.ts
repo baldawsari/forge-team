@@ -4,8 +4,8 @@
  * Each node is a higher-order function: it takes runtime deps and returns
  * a function that accepts workflow state and returns a partial state update.
  *
- * IMPORTANT: Nodes do NOT make actual LLM calls. They log what they would
- * dispatch and mark steps/phases as completed (stub execution).
+ * The executeStep node calls real agents via AgentRunner.processUserMessage(),
+ * producing actual AI-generated deliverables for each workflow step.
  */
 
 import { interrupt } from '@langchain/langgraph';
@@ -14,7 +14,9 @@ import type { WorkflowStateType } from './state';
 import type { AgentManager } from '../agent-manager';
 import type { ModelRouter } from '../model-router';
 import type { VIADPEngine } from '../viadp-engine';
+import type { AgentRunner } from '../agent-runner';
 import type {
+  AgentId,
   StepResult,
   PhaseResult,
   ApprovalRequest,
@@ -26,6 +28,7 @@ export interface NodeDeps {
   agentManager: AgentManager;
   modelRouter: ModelRouter;
   viadpEngine: VIADPEngine;
+  agentRunner: AgentRunner;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,12 +109,12 @@ export function viadpPreCheck(deps: NodeDeps) {
 // ---------------------------------------------------------------------------
 
 /**
- * Execute the current step. Looks up the step from the definition,
- * logs that it would dispatch the work, and returns state with the
- * step marked as completed.
+ * Execute the current step by calling the assigned agent via AgentRunner.
+ * Sends the step's action as a task prompt to the agent and captures
+ * the real AI response, token usage, and model info.
  */
 export function executeStep(deps: NodeDeps) {
-  return (state: WorkflowStateType): Partial<WorkflowStateType> => {
+  return async (state: WorkflowStateType): Promise<Partial<WorkflowStateType>> => {
     const { definition, currentPhaseIndex, currentStepIndex } = state;
     const phase = definition.phases[currentPhaseIndex];
     if (!phase) {
@@ -132,44 +135,70 @@ export function executeStep(deps: NodeDeps) {
     }
 
     const stepKey = `${phase.name}.${step.name}`;
+    const agentId = step.agent as AgentId;
+    const startTime = Date.now();
 
     console.log(
       `[LangGraph] executeStep: phase="${phase.name}" step="${step.name}" ` +
-      `agent="${step.agent}" action="${step.action}"`
+      `agent="${agentId}" action="${step.action}"`
     );
 
-    // Build simulated outputs from declared output artifacts
+    // Build the task prompt from step definition
+    const inputContext = step.inputs?.length
+      ? `\n\nAvailable inputs from previous steps:\n${step.inputs.map(i => `- ${i}`).join('\n')}`
+      : '';
+    const expectedOutputs = step.outputs?.length
+      ? `\n\nExpected deliverables:\n${step.outputs.map(o => `- ${o}`).join('\n')}`
+      : '';
+
+    const taskPrompt =
+      `You are executing workflow step "${step.name}" in phase "${phase.name}" ` +
+      `of the "${state.definitionName}" workflow.\n\n` +
+      `ACTION: ${step.action}` +
+      inputContext +
+      expectedOutputs +
+      `\n\nPlease complete this step and provide your deliverable.`;
+
+    // Call the real agent via AgentRunner
+    let agentResult: { content: string; model: string; inputTokens: number; outputTokens: number };
+    try {
+      agentResult = await deps.agentRunner.processUserMessage(
+        agentId,
+        taskPrompt,
+        state.sessionId,
+      );
+    } catch (err: any) {
+      console.error(`[LangGraph] executeStep: agent call failed for step "${step.name}":`, err?.message);
+      return {
+        lastError: `Agent ${agentId} failed on step "${step.name}": ${err?.message ?? 'Unknown error'}`,
+        status: 'failed',
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    // Build outputs from the agent response
     const outputs: Record<string, unknown> = {};
     if (step.outputs) {
       for (const outputKey of step.outputs) {
-        outputs[outputKey] = {
-          _generated: true,
-          _step: step.name,
-          _agent: step.agent,
-          _action: step.action,
-          _timestamp: new Date().toISOString(),
-        };
+        outputs[outputKey] = agentResult.content;
       }
-    }
-
-    // Apply per-step model override from YAML definition
-    const routedModel: string | null = step.model_override ?? null;
-    if (step.model_override) {
-      console.log(
-        `[LangGraph] executeStep: applying modelOverride="${step.model_override}" for step="${step.name}"`
-      );
     }
 
     const result: StepResult = {
       success: true,
       outputs,
       logs: [
-        `[${step.agent}] Executed action "${step.action}" for step "${step.name}".`,
-        `[${step.agent}] Produced outputs: ${step.outputs?.join(', ') || 'none'}.`,
+        `[${agentId}] Executed action "${step.action}" for step "${step.name}".`,
+        `[${agentId}] Response: ${agentResult.content.length} chars, ${agentResult.inputTokens} in / ${agentResult.outputTokens} out tokens.`,
       ],
-      durationMs: 0,
-      modelUsed: routedModel,
-      tokenUsage: null,
+      durationMs,
+      modelUsed: agentResult.model,
+      tokenUsage: {
+        input: agentResult.inputTokens,
+        output: agentResult.outputTokens,
+      },
     };
 
     const newStepResults = { ...state.stepResults, [stepKey]: result };
@@ -196,7 +225,7 @@ export function executeStep(deps: NodeDeps) {
           comment: null,
           requestedAt: new Date().toISOString(),
           resolvedAt: null,
-          context: { definitionName: state.definitionName },
+          context: { definitionName: state.definitionName, agentResponse: agentResult.content },
         },
         updatedAt: new Date().toISOString(),
       };

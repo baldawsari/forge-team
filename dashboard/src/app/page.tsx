@@ -401,7 +401,15 @@ function DashboardContent() {
       setTasks((prev) => {
         const exists = prev.some((t) => t.id === evt.taskId);
         if (!exists && data.type === "created") {
-          // Append newly created tasks
+          // Check if there's a temp task with the same title (optimistic add)
+          const tempIdx = prev.findIndex((t) => t.id.startsWith('temp-') && t.title === (evt.data?.title ?? ''));
+          if (tempIdx >= 0) {
+            // Replace the temp task with the real one from the server
+            return prev.map((t, i) =>
+              i === tempIdx ? { ...t, id: evt.taskId } : t
+            );
+          }
+          // Append genuinely new tasks (not from this client)
           const status = (evt.currentStatus || "backlog") as Task["status"];
           return [
             ...prev,
@@ -428,6 +436,7 @@ function DashboardContent() {
             title: evt.data?.title ?? t.title,
             assignedTo: evt.data?.assignedTo ?? t.assignedTo,
             priority: (evt.data?.priority || t.priority) as Task["priority"],
+            agentResponse: evt.data?.agentResponse ?? t.agentResponse,
           };
         });
       });
@@ -551,7 +560,7 @@ function DashboardContent() {
   }, []);
 
   const handleTaskCreate = useCallback((task: { title: string; description: string; priority: string; assignedTo?: string }) => {
-    // Optimistically add to local state
+    // Optimistically add to local state with temp ID
     const tempId = `temp-${Date.now()}`;
     setTasks((prev) => [
       ...prev,
@@ -567,29 +576,38 @@ function DashboardContent() {
         startedAt: null,
       },
     ]);
-    // Send to gateway
+    // Send to gateway and reconcile temp ID with real ID
     createTask({
       sessionId: "default",
       title: task.title,
       description: task.description,
       priority: task.priority,
       assignedTo: task.assignedTo,
-    }).catch((err) => console.error("Failed to create task:", err));
+    }).then((result: any) => {
+      if (result?.task?.id) {
+        const realId = result.task.id;
+        setTasks((prev) => prev.map((t) =>
+          t.id === tempId ? { ...t, id: realId } : t
+        ));
+      }
+    }).catch((err) => {
+      console.error("Failed to create task:", err);
+      // Remove the optimistic temp task on failure
+      setTasks((prev) => prev.filter((t) => t.id !== tempId));
+    });
   }, []);
 
   const handleTaskStart = useCallback(async (taskId: string) => {
     setProcessingTasks(prev => new Set(prev).add(taskId));
     try {
-      const result = await startTask(taskId);
-      // Store the agent response on the task so the expanded card can show it
-      if (result?.response) {
-        setTasks(prev => prev.map(t =>
-          t.id === taskId ? { ...t, agentResponse: result.response } : t
-        ));
-      }
+      await startTask(taskId);
+      // Gateway returns 202 immediately. The agent response will arrive via
+      // the task_update socket event with currentStatus='review' and the
+      // agentResponse in data. processingTasks spinner stays until that event
+      // clears it via the task_update handler.
     } catch (err) {
       console.error("Failed to start task:", err);
-    } finally {
+      // Only clear processing on error — success is cleared by socket events
       setProcessingTasks(prev => { const s = new Set(prev); s.delete(taskId); return s; });
     }
   }, []);
