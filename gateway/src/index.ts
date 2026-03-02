@@ -209,7 +209,8 @@ async function initCompanyKB(geminiFileSearch: GeminiFileSearch): Promise<string
 // ---------------------------------------------------------------------------
 
 const app = express();
-app.use(cors());
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN ?? 'http://localhost:3000';
+app.use(cors(AUTH_ENABLED ? { origin: DASHBOARD_ORIGIN, credentials: true } : undefined));
 app.use(express.json({ limit: '25mb' }));
 
 function asyncHandler(fn: (req: any, res: any, next: express.NextFunction) => Promise<any>): express.RequestHandler {
@@ -1805,7 +1806,9 @@ gatewayServer.attach(httpServer);
 // ---------------------------------------------------------------------------
 
 const io = new SocketIOServer(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: AUTH_ENABLED
+    ? { origin: DASHBOARD_ORIGIN, methods: ['GET', 'POST'], credentials: true }
+    : { origin: '*', methods: ['GET', 'POST'] },
   path: '/socket.io',
 });
 

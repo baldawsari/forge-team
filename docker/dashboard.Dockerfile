@@ -24,7 +24,7 @@ ENV NODE_ENV=production
 
 # NEXT_PUBLIC_* vars are baked at build time in Next.js static builds.
 # Default to localhost since the BROWSER (not the container) makes these requests.
-ARG NEXT_PUBLIC_GATEWAY_URL=http://localhost:3001
+ARG NEXT_PUBLIC_GATEWAY_URL=http://localhost:18789
 ENV NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL}
 
 RUN npm run build

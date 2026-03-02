@@ -49,6 +49,19 @@ RUN addgroup --system --gid 1001 forgeteam && \
 # Install tsx globally
 RUN npm install -g tsx
 
+# Install Playwright browser deps for QA agent (chromium system libs)
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Tell Playwright to use system-installed chromium
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 # Copy workspace structure
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./
@@ -64,7 +77,7 @@ RUN chown -R forgeteam:forgeteam /app
 USER forgeteam
 
 ENV NODE_ENV=production
-ENV PORT=18789
+ENV GATEWAY_PORT=18789
 
 EXPOSE 18789
 
