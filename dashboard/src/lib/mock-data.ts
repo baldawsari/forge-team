@@ -6,8 +6,8 @@ export interface Agent {
   roleAr: string;
   avatar: string;
   status: "idle" | "working" | "reviewing" | "blocked";
-  currentTask: string | null;
-  currentTaskAr: string | null;
+  currentTaskId: string | null;
+  currentTaskIdAr: string | null;
   model: string;
   fallbackModel: string;
   temperature: number;
@@ -22,10 +22,10 @@ export interface Task {
   titleAr: string;
   description: string;
   descriptionAr: string;
-  column: "backlog" | "todo" | "inProgress" | "review" | "done";
-  assignedAgent: string | null;
+  status: "backlog" | "todo" | "in-progress" | "review" | "done" | "cancelled";
+  assignedTo: string | null;
   priority: "critical" | "high" | "medium" | "low";
-  startTime: string;
+  startedAt: string | null;
   artifacts?: string[];
   waitingForHuman?: boolean;
   agentResponse?: string;
@@ -49,7 +49,7 @@ export interface WorkflowPhase {
   name: string;
   nameAr: string;
   progress: number;
-  status: "complete" | "active" | "pending";
+  status: "completed" | "active" | "pending";
   startDate: string;
   endDate?: string;
   checkpoints: number;
@@ -58,9 +58,9 @@ export interface WorkflowPhase {
 
 export interface DelegationEntry {
   id: string;
-  delegator: string;
-  delegatee: string;
-  task: string;
+  from: string;
+  to: string;
+  taskId: string;
   taskAr: string;
   trustScore: number;
   status: "verified" | "pending" | "failed";
@@ -105,8 +105,8 @@ export const mockAgents: Agent[] = [
     roleAr: "المنسق / قائد الفريق",
     avatar: "🎯",
     status: "working",
-    currentTask: "Sprint 2.1 orchestration and task delegation",
-    currentTaskAr: "تنسيق السبرنت 2.1 وتفويض المهام",
+    currentTaskId: "Sprint 2.1 orchestration and task delegation",
+    currentTaskIdAr: "تنسيق السبرنت 2.1 وتفويض المهام",
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.4,
@@ -122,8 +122,8 @@ export const mockAgents: Agent[] = [
     roleAr: "المتطلبات والأولويات",
     avatar: "📋",
     status: "working",
-    currentTask: "Prioritizing sprint 2.2 backlog items",
-    currentTaskAr: "ترتيب أولويات عناصر تراكم السبرنت 2.2",
+    currentTaskId: "Prioritizing sprint 2.2 backlog items",
+    currentTaskIdAr: "ترتيب أولويات عناصر تراكم السبرنت 2.2",
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.5,
@@ -139,8 +139,8 @@ export const mockAgents: Agent[] = [
     roleAr: "البحث والتحليل",
     avatar: "📊",
     status: "idle",
-    currentTask: null,
-    currentTaskAr: null,
+    currentTaskId: null,
+    currentTaskIdAr: null,
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.4,
@@ -156,8 +156,8 @@ export const mockAgents: Agent[] = [
     roleAr: "التنسيق الرشيق",
     avatar: "⚡",
     status: "working",
-    currentTask: "Facilitating daily standup and tracking velocity",
-    currentTaskAr: "تيسير الاجتماع اليومي وتتبع السرعة",
+    currentTaskId: "Facilitating daily standup and tracking velocity",
+    currentTaskIdAr: "تيسير الاجتماع اليومي وتتبع السرعة",
     model: "gemini-flash-3",
     fallbackModel: "claude-haiku-4-5",
     temperature: 0.3,
@@ -173,8 +173,8 @@ export const mockAgents: Agent[] = [
     roleAr: "تصميم النظام",
     avatar: "🏗️",
     status: "working",
-    currentTask: "Designing microservices architecture with CQRS",
-    currentTaskAr: "تصميم بنية الخدمات المصغرة مع CQRS",
+    currentTaskId: "Designing microservices architecture with CQRS",
+    currentTaskIdAr: "تصميم بنية الخدمات المصغرة مع CQRS",
     model: "claude-opus-4-6",
     fallbackModel: "gemini-3.1-pro",
     temperature: 0.3,
@@ -190,8 +190,8 @@ export const mockAgents: Agent[] = [
     roleAr: "تجربة المستخدم",
     avatar: "🎨",
     status: "idle",
-    currentTask: null,
-    currentTaskAr: null,
+    currentTaskId: null,
+    currentTaskIdAr: null,
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.7,
@@ -207,8 +207,8 @@ export const mockAgents: Agent[] = [
     roleAr: "كود الواجهة",
     avatar: "💻",
     status: "working",
-    currentTask: "Building dashboard components with RTL support",
-    currentTaskAr: "بناء مكونات لوحة التحكم مع دعم RTL",
+    currentTaskId: "Building dashboard components with RTL support",
+    currentTaskIdAr: "بناء مكونات لوحة التحكم مع دعم RTL",
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.5,
@@ -224,8 +224,8 @@ export const mockAgents: Agent[] = [
     roleAr: "الخلفية والـ APIs",
     avatar: "⚙️",
     status: "reviewing",
-    currentTask: "Reviewing API gateway implementation PR",
-    currentTaskAr: "مراجعة طلب دمج تنفيذ بوابة API",
+    currentTaskId: "Reviewing API gateway implementation PR",
+    currentTaskIdAr: "مراجعة طلب دمج تنفيذ بوابة API",
     model: "claude-opus-4-6",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.3,
@@ -241,8 +241,8 @@ export const mockAgents: Agent[] = [
     roleAr: "الاختبار والجودة",
     avatar: "🔍",
     status: "working",
-    currentTask: "Writing integration test suite for auth module",
-    currentTaskAr: "كتابة مجموعة اختبارات التكامل لوحدة المصادقة",
+    currentTaskId: "Writing integration test suite for auth module",
+    currentTaskIdAr: "كتابة مجموعة اختبارات التكامل لوحدة المصادقة",
     model: "claude-opus-4-6",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.3,
@@ -258,8 +258,8 @@ export const mockAgents: Agent[] = [
     roleAr: "البنية التحتية",
     avatar: "🚀",
     status: "blocked",
-    currentTask: "CI/CD pipeline - waiting for AWS credentials",
-    currentTaskAr: "خط أنابيب CI/CD - بانتظار بيانات اعتماد AWS",
+    currentTaskId: "CI/CD pipeline - waiting for AWS credentials",
+    currentTaskIdAr: "خط أنابيب CI/CD - بانتظار بيانات اعتماد AWS",
     model: "gemini-3.1-pro",
     fallbackModel: "claude-sonnet-4-6",
     temperature: 0.3,
@@ -275,8 +275,8 @@ export const mockAgents: Agent[] = [
     roleAr: "الأمن والامتثال",
     avatar: "🛡️",
     status: "reviewing",
-    currentTask: "OWASP Top 10 compliance audit",
-    currentTaskAr: "تدقيق التوافق مع OWASP Top 10",
+    currentTaskId: "OWASP Top 10 compliance audit",
+    currentTaskIdAr: "تدقيق التوافق مع OWASP Top 10",
     model: "claude-opus-4-6",
     fallbackModel: "gemini-3.1-pro",
     temperature: 0.3,
@@ -292,8 +292,8 @@ export const mockAgents: Agent[] = [
     roleAr: "التوثيق",
     avatar: "📝",
     status: "idle",
-    currentTask: null,
-    currentTaskAr: null,
+    currentTaskId: null,
+    currentTaskIdAr: null,
     model: "claude-sonnet-4-6",
     fallbackModel: "gemini-3.1-pro",
     temperature: 0.6,
@@ -312,10 +312,10 @@ export const mockTasks: Task[] = [
     titleAr: "تدفق مصادقة المستخدم",
     description: "Implement OAuth2 + JWT authentication with refresh tokens",
     descriptionAr: "تنفيذ مصادقة OAuth2 + JWT مع رموز التحديث",
-    column: "done",
-    assignedAgent: "backend-dev",
+    status: "done",
+    assignedTo: "backend-dev",
     priority: "critical",
-    startTime: "2026-02-24T08:00:00Z",
+    startedAt: "2026-02-24T08:00:00Z",
     artifacts: ["auth-flow-diagram.pdf", "jwt-spec.yaml"],
   },
   {
@@ -324,10 +324,10 @@ export const mockTasks: Task[] = [
     titleAr: "تخطيط لوحة التحكم",
     description: "Build the main dashboard with RTL support and responsive grid",
     descriptionAr: "بناء لوحة التحكم الرئيسية مع دعم RTL وشبكة متجاوبة",
-    column: "inProgress",
-    assignedAgent: "frontend-dev",
+    status: "in-progress",
+    assignedTo: "frontend-dev",
     priority: "high",
-    startTime: "2026-02-25T10:30:00Z",
+    startedAt: "2026-02-25T10:30:00Z",
   },
   {
     id: "task-3",
@@ -335,10 +335,10 @@ export const mockTasks: Task[] = [
     titleAr: "إعداد بوابة API",
     description: "Configure API gateway with rate limiting and auth middleware",
     descriptionAr: "تكوين بوابة API مع تحديد المعدل والبرمجيات الوسيطة للمصادقة",
-    column: "review",
-    assignedAgent: "backend-dev",
+    status: "review",
+    assignedTo: "backend-dev",
     priority: "high",
-    startTime: "2026-02-25T09:00:00Z",
+    startedAt: "2026-02-25T09:00:00Z",
     artifacts: ["api-spec.yaml"],
   },
   {
@@ -347,10 +347,10 @@ export const mockTasks: Task[] = [
     titleAr: "تصميم مخطط قاعدة البيانات",
     description: "Design PostgreSQL schema for agent state management and task tracking",
     descriptionAr: "تصميم مخطط PostgreSQL لإدارة حالة الوكيل وتتبع المهام",
-    column: "done",
-    assignedAgent: "architect",
+    status: "done",
+    assignedTo: "architect",
     priority: "critical",
-    startTime: "2026-02-23T14:00:00Z",
+    startedAt: "2026-02-23T14:00:00Z",
     artifacts: ["architecture-diagram.pdf", "db-schema.sql"],
   },
   {
@@ -359,10 +359,10 @@ export const mockTasks: Task[] = [
     titleAr: "مجموعة اختبارات التكامل",
     description: "Write end-to-end tests for agent communication pipeline",
     descriptionAr: "كتابة اختبارات شاملة لخط أنابيب اتصال الوكلاء",
-    column: "inProgress",
-    assignedAgent: "qa-architect",
+    status: "in-progress",
+    assignedTo: "qa-architect",
     priority: "medium",
-    startTime: "2026-02-26T07:00:00Z",
+    startedAt: "2026-02-26T07:00:00Z",
   },
   {
     id: "task-6",
@@ -370,10 +370,10 @@ export const mockTasks: Task[] = [
     titleAr: "خط أنابيب CI/CD",
     description: "Setup GitHub Actions with Docker builds and K8s deployment",
     descriptionAr: "إعداد GitHub Actions مع بناء Docker ونشر K8s",
-    column: "inProgress",
-    assignedAgent: "devops-engineer",
+    status: "in-progress",
+    assignedTo: "devops-engineer",
     priority: "high",
-    startTime: "2026-02-26T06:00:00Z",
+    startedAt: "2026-02-26T06:00:00Z",
     waitingForHuman: true,
   },
   {
@@ -382,10 +382,10 @@ export const mockTasks: Task[] = [
     titleAr: "تدقيق أمان OWASP",
     description: "Run full OWASP Top 10 audit on all API endpoints",
     descriptionAr: "إجراء تدقيق OWASP Top 10 الكامل على جميع نقاط نهاية API",
-    column: "review",
-    assignedAgent: "security-specialist",
+    status: "review",
+    assignedTo: "security-specialist",
     priority: "critical",
-    startTime: "2026-02-25T16:00:00Z",
+    startedAt: "2026-02-25T16:00:00Z",
   },
   {
     id: "task-8",
@@ -393,10 +393,10 @@ export const mockTasks: Task[] = [
     titleAr: "توثيق API v2",
     description: "Generate OpenAPI 3.1 docs with examples for all endpoints",
     descriptionAr: "إنشاء مستندات OpenAPI 3.1 مع أمثلة لجميع نقاط النهاية",
-    column: "inProgress",
-    assignedAgent: "tech-writer",
+    status: "in-progress",
+    assignedTo: "tech-writer",
     priority: "medium",
-    startTime: "2026-02-26T08:30:00Z",
+    startedAt: "2026-02-26T08:30:00Z",
   },
   {
     id: "task-9",
@@ -404,10 +404,10 @@ export const mockTasks: Task[] = [
     titleAr: "بنية الخدمات المصغرة",
     description: "Design event-driven microservices architecture with CQRS pattern",
     descriptionAr: "تصميم بنية الخدمات المصغرة المبنية على الأحداث مع نمط CQRS",
-    column: "inProgress",
-    assignedAgent: "architect",
+    status: "in-progress",
+    assignedTo: "architect",
     priority: "critical",
-    startTime: "2026-02-25T11:00:00Z",
+    startedAt: "2026-02-25T11:00:00Z",
   },
   {
     id: "task-10",
@@ -415,10 +415,10 @@ export const mockTasks: Task[] = [
     titleAr: "تنقيح تراكم المنتج",
     description: "Refine and prioritize backlog items for sprint 2.2 planning",
     descriptionAr: "تنقيح وترتيب أولويات عناصر التراكم لتخطيط السبرنت 2.2",
-    column: "inProgress",
-    assignedAgent: "product-owner",
+    status: "in-progress",
+    assignedTo: "product-owner",
     priority: "high",
-    startTime: "2026-02-25T14:00:00Z",
+    startedAt: "2026-02-25T14:00:00Z",
   },
   {
     id: "task-11",
@@ -426,10 +426,10 @@ export const mockTasks: Task[] = [
     titleAr: "نماذج أولية لتسجيل المستخدم",
     description: "Design user onboarding flow wireframes with Figma",
     descriptionAr: "تصميم نماذج أولية لتدفق تسجيل المستخدم باستخدام Figma",
-    column: "todo",
-    assignedAgent: "ux-designer",
+    status: "todo",
+    assignedTo: "ux-designer",
     priority: "medium",
-    startTime: "2026-02-26T09:00:00Z",
+    startedAt: "2026-02-26T09:00:00Z",
   },
   {
     id: "task-12",
@@ -437,10 +437,10 @@ export const mockTasks: Task[] = [
     titleAr: "تقرير مراجعة السبرنت",
     description: "Compile sprint 2.0 retrospective with metrics and lessons learned",
     descriptionAr: "تجميع مراجعة السبرنت 2.0 مع المقاييس والدروس المستفادة",
-    column: "todo",
-    assignedAgent: "scrum-master",
+    status: "todo",
+    assignedTo: "scrum-master",
     priority: "low",
-    startTime: "2026-02-26T10:00:00Z",
+    startedAt: "2026-02-26T10:00:00Z",
   },
   {
     id: "task-13",
@@ -448,10 +448,10 @@ export const mockTasks: Task[] = [
     titleAr: "وثيقة متطلبات الفوترة",
     description: "Write BRD for the billing and subscription module",
     descriptionAr: "كتابة وثيقة متطلبات الأعمال لوحدة الفوترة والاشتراكات",
-    column: "backlog",
-    assignedAgent: "business-analyst",
+    status: "backlog",
+    assignedTo: "business-analyst",
     priority: "medium",
-    startTime: "2026-02-26T10:00:00Z",
+    startedAt: "2026-02-26T10:00:00Z",
     waitingForHuman: true,
   },
   {
@@ -460,10 +460,10 @@ export const mockTasks: Task[] = [
     titleAr: "طبقة التخزين المؤقت Redis",
     description: "Implement Redis caching for agent state and session data",
     descriptionAr: "تنفيذ التخزين المؤقت Redis لحالة الوكيل وبيانات الجلسة",
-    column: "backlog",
-    assignedAgent: null,
+    status: "backlog",
+    assignedTo: null,
     priority: "high",
-    startTime: "2026-02-26T10:00:00Z",
+    startedAt: "2026-02-26T10:00:00Z",
   },
   {
     id: "task-15",
@@ -471,10 +471,10 @@ export const mockTasks: Task[] = [
     titleAr: "اختبار تحميل WebSocket",
     description: "Stress test WebSocket connections with 10K concurrent agents",
     descriptionAr: "اختبار إجهاد اتصالات WebSocket مع 10 آلاف وكيل متزامن",
-    column: "backlog",
-    assignedAgent: null,
+    status: "backlog",
+    assignedTo: null,
     priority: "low",
-    startTime: "2026-02-26T10:00:00Z",
+    startedAt: "2026-02-26T10:00:00Z",
   },
 ];
 
@@ -606,7 +606,7 @@ export const mockWorkflowPhases: WorkflowPhase[] = [
     name: "Requirements",
     nameAr: "المتطلبات",
     progress: 100,
-    status: "complete",
+    status: "completed",
     startDate: "2026-02-20",
     endDate: "2026-02-22",
     checkpoints: 5,
@@ -617,7 +617,7 @@ export const mockWorkflowPhases: WorkflowPhase[] = [
     name: "Design",
     nameAr: "التصميم",
     progress: 100,
-    status: "complete",
+    status: "completed",
     startDate: "2026-02-22",
     endDate: "2026-02-24",
     checkpoints: 4,
@@ -660,9 +660,9 @@ export const mockWorkflowPhases: WorkflowPhase[] = [
 export const mockDelegations: DelegationEntry[] = [
   {
     id: "del-1",
-    delegator: "BMad Master",
-    delegatee: "Winston (Architect)",
-    task: "Design microservices architecture",
+    from: "BMad Master",
+    to: "Winston (Architect)",
+    taskId: "Design microservices architecture",
     taskAr: "تصميم بنية الخدمات المصغرة",
     trustScore: 0.95,
     status: "verified",
@@ -676,9 +676,9 @@ export const mockDelegations: DelegationEntry[] = [
   },
   {
     id: "del-2",
-    delegator: "Winston (Architect)",
-    delegatee: "Amelia-BE (Dev)",
-    task: "Implement event bus with RabbitMQ",
+    from: "Winston (Architect)",
+    to: "Amelia-BE (Dev)",
+    taskId: "Implement event bus with RabbitMQ",
     taskAr: "تنفيذ ناقل الأحداث باستخدام RabbitMQ",
     trustScore: 0.88,
     status: "verified",
@@ -692,9 +692,9 @@ export const mockDelegations: DelegationEntry[] = [
   },
   {
     id: "del-3",
-    delegator: "BMad Master",
-    delegatee: "Quinn (QA)",
-    task: "Integration test suite for auth module",
+    from: "BMad Master",
+    to: "Quinn (QA)",
+    taskId: "Integration test suite for auth module",
     taskAr: "مجموعة اختبارات التكامل لوحدة المصادقة",
     trustScore: 0.92,
     status: "verified",
@@ -708,9 +708,9 @@ export const mockDelegations: DelegationEntry[] = [
   },
   {
     id: "del-4",
-    delegator: "BMad Master",
-    delegatee: "Barry (DevOps)",
-    task: "CI/CD pipeline configuration",
+    from: "BMad Master",
+    to: "Barry (DevOps)",
+    taskId: "CI/CD pipeline configuration",
     taskAr: "تكوين خط أنابيب CI/CD",
     trustScore: 0.85,
     status: "pending",
@@ -724,9 +724,9 @@ export const mockDelegations: DelegationEntry[] = [
   },
   {
     id: "del-5",
-    delegator: "Shield (Security)",
-    delegatee: "Amelia-BE (Dev)",
-    task: "Fix input validation vulnerabilities",
+    from: "Shield (Security)",
+    to: "Amelia-BE (Dev)",
+    taskId: "Fix input validation vulnerabilities",
     taskAr: "إصلاح ثغرات التحقق من المدخلات",
     trustScore: 0.78,
     status: "pending",
@@ -740,9 +740,9 @@ export const mockDelegations: DelegationEntry[] = [
   },
   {
     id: "del-6",
-    delegator: "John (PM)",
-    delegatee: "Mary (BA)",
-    task: "Write billing module BRD",
+    from: "John (PM)",
+    to: "Mary (BA)",
+    taskId: "Write billing module BRD",
     taskAr: "كتابة وثيقة متطلبات وحدة الفوترة",
     trustScore: 0.91,
     status: "verified",

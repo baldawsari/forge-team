@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     team_id         TEXT,
     thread_id       TEXT,
     content         TEXT NOT NULL,
-    embedding       vector(1536),
+    embedding       vector(768),
     metadata        JSONB DEFAULT '{}'::jsonb,
     tags            JSONB DEFAULT '[]'::jsonb,
     importance      DOUBLE PRECISION NOT NULL DEFAULT 0.5
@@ -368,7 +368,7 @@ CREATE TABLE IF NOT EXISTS trust_scores (
 CREATE TABLE IF NOT EXISTS vector_entries (
     id              TEXT PRIMARY KEY,
     content         TEXT NOT NULL,
-    embedding       vector(1536),
+    embedding       vector(768),
     metadata        JSONB DEFAULT '{}'::jsonb,
     namespace       TEXT DEFAULT 'default',
     created_at      TIMESTAMPTZ DEFAULT NOW(),

@@ -7,6 +7,7 @@
 
 import { v4 as uuid } from 'uuid';
 import { EventEmitter } from 'eventemitter3';
+import type { Pool } from 'pg';
 import type { AgentId, AgentMessage } from '@forge-team/shared';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export interface SessionEvents {
 
 export class SessionManager extends EventEmitter<SessionEvents> {
   private sessions: Map<string, Session> = new Map();
+  private pool: Pool | null = null;
 
   /** Maximum message history per session before truncation */
   private maxHistorySize: number;
@@ -62,13 +64,78 @@ export class SessionManager extends EventEmitter<SessionEvents> {
   /** Timer for periodic cleanup */
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(options?: { maxHistorySize?: number; inactivityTimeoutMs?: number }) {
+  constructor(options?: { maxHistorySize?: number; inactivityTimeoutMs?: number; pool?: Pool }) {
     super();
+    this.pool = options?.pool ?? null;
     this.maxHistorySize = options?.maxHistorySize ?? 1000;
     this.inactivityTimeout = options?.inactivityTimeoutMs ?? 30 * 60 * 1000;
 
     // Run cleanup every 5 minutes
     this.cleanupTimer = setInterval(() => this.cleanupInactiveSessions(), 5 * 60 * 1000);
+  }
+
+  /**
+   * Loads sessions and recent messages from PostgreSQL on startup.
+   */
+  async loadFromDB(): Promise<void> {
+    if (!this.pool) return;
+    try {
+      const sessResult = await this.pool.query(
+        `SELECT * FROM sessions WHERE status IN ('active', 'paused') ORDER BY created_at ASC`
+      );
+      for (const row of sessResult.rows) {
+        const session: Session = {
+          id: row.id,
+          label: row.name ?? '',
+          state: row.status === 'active' ? 'active' : row.status === 'paused' ? 'paused' : 'idle',
+          userId: null,
+          activeAgents: new Set(),
+          messageHistory: [],
+          metadata: row.metadata ?? {},
+          createdAt: new Date(row.created_at).toISOString(),
+          updatedAt: new Date(row.updated_at).toISOString(),
+          lastActivityAt: new Date(row.updated_at).toISOString(),
+        };
+        this.sessions.set(session.id, session);
+      }
+
+      // Load recent messages for each session (last 100 per session)
+      for (const session of this.sessions.values()) {
+        try {
+          const msgResult = await this.pool!.query(
+            `SELECT * FROM messages WHERE session_id=$1 ORDER BY timestamp ASC LIMIT 100`,
+            [session.id]
+          );
+          for (const row of msgResult.rows) {
+            session.messageHistory.push({
+              id: row.id,
+              type: row.type,
+              from: row.from_agent,
+              to: row.to_agent,
+              payload: { content: row.content },
+              sessionId: row.session_id,
+              timestamp: new Date(row.timestamp).toISOString(),
+              correlationId: row.correlation_id ?? undefined,
+              metadata: row.metadata ?? {},
+            });
+          }
+        } catch {
+          // Individual session message load failure is non-fatal
+        }
+      }
+
+      console.log(`[SessionManager] Loaded ${sessResult.rows.length} sessions from DB`);
+    } catch (err: any) {
+      console.warn('[SessionManager] Failed to load sessions from DB:', err?.message);
+    }
+  }
+
+  /** Fire-and-forget DB write helper */
+  private dbWrite(sql: string, params: unknown[]): void {
+    if (!this.pool) return;
+    this.pool.query(sql, params).catch((err: any) => {
+      console.warn('[SessionManager] DB write failed:', err?.message);
+    });
   }
 
   /**
@@ -94,6 +161,15 @@ export class SessionManager extends EventEmitter<SessionEvents> {
     };
 
     this.sessions.set(session.id, session);
+
+    // Persist to DB
+    this.dbWrite(
+      `INSERT INTO sessions (id, name, status, metadata, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO NOTHING`,
+      [session.id, session.label, 'active', JSON.stringify(session.metadata), session.createdAt, session.updatedAt],
+    );
+
     this.emit('session:created', session);
     return session;
   }
@@ -129,6 +205,13 @@ export class SessionManager extends EventEmitter<SessionEvents> {
     session.state = 'terminated';
     session.updatedAt = new Date().toISOString();
     this.sessions.delete(sessionId);
+
+    // Persist to DB
+    this.dbWrite(
+      `UPDATE sessions SET status='completed', ended_at=$1, updated_at=$2 WHERE id=$3`,
+      [session.updatedAt, session.updatedAt, sessionId],
+    );
+
     this.emit('session:destroyed', sessionId);
     return true;
   }
@@ -158,6 +241,13 @@ export class SessionManager extends EventEmitter<SessionEvents> {
     session.state = newState;
     session.updatedAt = new Date().toISOString();
     session.lastActivityAt = session.updatedAt;
+
+    // Map session state to DB status
+    const dbStatus = newState === 'terminated' ? 'completed' : newState === 'idle' ? 'active' : newState;
+    this.dbWrite(
+      `UPDATE sessions SET status=$1, updated_at=$2 WHERE id=$3`,
+      [dbStatus, session.updatedAt, sessionId],
+    );
 
     this.emit('session:state-changed', sessionId, oldState, newState);
     return true;
@@ -214,6 +304,23 @@ export class SessionManager extends EventEmitter<SessionEvents> {
     session.messageHistory.push(message);
     session.updatedAt = new Date().toISOString();
     session.lastActivityAt = session.updatedAt;
+
+    // Persist message to DB
+    this.dbWrite(
+      `INSERT INTO messages (id, from_agent, to_agent, content, type, session_id, correlation_id, metadata, timestamp)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        message.id,
+        message.from,
+        message.to,
+        message.payload?.content ?? '',
+        message.type,
+        message.sessionId,
+        message.correlationId ?? null,
+        JSON.stringify(message.metadata ?? {}),
+        message.timestamp,
+      ],
+    );
 
     // Truncate history if it exceeds the maximum
     if (session.messageHistory.length > this.maxHistorySize) {

@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { v4 as uuid } from 'uuid';
+import type { Pool } from 'pg';
 import type {
   AgentId,
   AgentStatus,
@@ -212,10 +213,43 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     takenOverAt: string;
     originalStatus: string;
   }> = new Map();
+  private pool: Pool | null = null;
 
-  constructor() {
+  constructor(pool?: Pool) {
     super();
+    this.pool = pool ?? null;
     this.loadDefaultConfigs();
+  }
+
+  /**
+   * Loads agent state from PostgreSQL on startup, merging with in-memory defaults.
+   */
+  async loadFromDB(): Promise<void> {
+    if (!this.pool) return;
+    try {
+      const result = await this.pool.query('SELECT * FROM agents');
+      let merged = 0;
+      for (const row of result.rows) {
+        const agentId = row.id as AgentId;
+        const state = this.states.get(agentId);
+        if (state) {
+          // Merge DB state into in-memory state
+          state.status = row.status ?? state.status;
+          merged++;
+        }
+      }
+      console.log(`[AgentManager] Merged ${merged} agent states from DB`);
+    } catch (err: any) {
+      console.warn('[AgentManager] Failed to load agent states from DB:', err?.message);
+    }
+  }
+
+  /** Fire-and-forget DB write helper */
+  private dbWrite(sql: string, params: unknown[]): void {
+    if (!this.pool) return;
+    this.pool.query(sql, params).catch((err: any) => {
+      console.warn('[AgentManager] DB write failed:', err?.message);
+    });
   }
 
   /**
@@ -286,6 +320,12 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     state.status = newStatus;
     state.lastActiveAt = new Date().toISOString();
 
+    // Persist to DB
+    this.dbWrite(
+      `UPDATE agents SET status=$1, updated_at=$2 WHERE id=$3`,
+      [newStatus, state.lastActiveAt, agentId],
+    );
+
     this.emit('agent:status-changed', agentId, oldStatus, newStatus);
     return true;
   }
@@ -309,6 +349,12 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     state.lastActiveAt = new Date().toISOString();
     this.setAgentStatus(agentId, 'working');
 
+    // Persist load increment to DB
+    this.dbWrite(
+      `UPDATE agents SET current_load = current_load + 1, updated_at = $1 WHERE id = $2`,
+      [state.lastActiveAt, agentId],
+    );
+
     this.emit('agent:task-assigned', agentId, taskId, sessionId);
     return true;
   }
@@ -330,6 +376,12 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     state.tasksCompleted += 1;
     state.lastActiveAt = new Date().toISOString();
     this.setAgentStatus(agentId, 'idle');
+
+    // Persist load decrement to DB
+    this.dbWrite(
+      `UPDATE agents SET current_load = GREATEST(current_load - 1, 0), updated_at = $1 WHERE id = $2`,
+      [state.lastActiveAt, agentId],
+    );
 
     this.emit('agent:task-completed', agentId, taskId, sessionId);
     return true;

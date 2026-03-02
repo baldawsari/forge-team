@@ -99,10 +99,10 @@ function AgentDetailModal({
             {t("agents.currentTask")}
           </h4>
           <p className="text-sm text-text-primary bidi-auto">
-            {agent.currentTask
+            {agent.currentTaskId
               ? isAr
-                ? agent.currentTaskAr
-                : agent.currentTask
+                ? agent.currentTaskIdAr
+                : agent.currentTaskId
               : t("agents.noActiveTask")}
           </p>
         </div>
@@ -221,9 +221,9 @@ export default function AgentStatusGrid({ agents, escalations, takenOverAgents, 
                     </div>
                   </div>
                 </div>
-                {agent.currentTask && (
+                {agent.currentTaskId && (
                   <p className="text-[10px] text-text-muted truncate ps-7 bidi-auto">
-                    {isAr ? agent.currentTaskAr : agent.currentTask}
+                    {isAr ? agent.currentTaskIdAr : agent.currentTaskId}
                   </p>
                 )}
                 <p className="text-[10px] text-text-muted/60 ps-7 ltr-nums mt-0.5">

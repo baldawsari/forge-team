@@ -451,7 +451,8 @@ export class ModelRouter extends EventEmitter {
     model: ModelId,
     inputTokens: number,
     outputTokens: number,
-    tier: ModelTier
+    tier: ModelTier,
+    latencyMs?: number,
   ): CostRecord {
     const modelConfig = MODEL_CATALOG[model];
     const cost =
@@ -477,9 +478,9 @@ export class ModelRouter extends EventEmitter {
     // Fire-and-forget DB persistence
     import('./db.js').then(({ query }) => {
       query(
-        `INSERT INTO cost_tracking (id, agent_id, session_id, task_id, model_used, provider, tokens_in, tokens_out, cost_usd, timestamp)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [record.id, agentId, sessionId, taskId, model, modelConfig.provider, inputTokens, outputTokens, cost, record.timestamp]
+        `INSERT INTO cost_tracking (id, agent_id, session_id, task_id, model_used, provider, tokens_in, tokens_out, cost_usd, latency_ms, success, metadata, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [record.id, agentId, sessionId, taskId, model, modelConfig.provider, inputTokens, outputTokens, cost, latencyMs ?? 0, true, JSON.stringify({}), record.timestamp]
       ).catch((err: any) => {
         console.warn('[ModelRouter] Failed to persist cost record:', err?.message);
       });
@@ -506,7 +507,7 @@ export class ModelRouter extends EventEmitter {
   /**
    * Returns cost summary for a given time range (or all time if no range specified).
    */
-  getCostSummary(from?: string, to?: string): CostSummary {
+  getCostSummary(from?: string, to?: string, agentId?: string): CostSummary {
     let records = this.costRecords;
 
     if (from) {
@@ -516,6 +517,9 @@ export class ModelRouter extends EventEmitter {
     if (to) {
       const toDate = new Date(to).getTime();
       records = records.filter((r) => new Date(r.timestamp).getTime() <= toDate);
+    }
+    if (agentId) {
+      records = records.filter((r) => r.agentId === agentId);
     }
 
     const perAgent = {} as Record<string, number>;

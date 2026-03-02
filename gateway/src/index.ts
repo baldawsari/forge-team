@@ -63,16 +63,33 @@ console.log('==========================================================');
 console.log('  ForgeTeam Gateway - Initializing');
 console.log('==========================================================');
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam';
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  max: 20,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+});
+pool.on('error', (err) => {
+  console.error('[DB] Unexpected pool error on idle client:', err.message);
+});
+const redis = new Redis(REDIS_URL);
+redis.on('error', (err) => {
+  console.error('[Redis] Connection error:', err.message);
+});
+
 const sessionManager = new SessionManager({
   maxHistorySize: 2000,
   inactivityTimeoutMs: 60 * 60 * 1000, // 1 hour
+  pool,
 });
 console.log('[Init] SessionManager initialized');
 
-const agentManager = new AgentManager();
+const agentManager = new AgentManager(pool);
 console.log('[Init] AgentManager initialized');
 
-const taskManager = new TaskManager();
+const taskManager = new TaskManager(pool);
 console.log('[Init] TaskManager initialized');
 
 const viadpEngine = new VIADPEngine(agentManager);
@@ -83,11 +100,6 @@ console.log('[Init] ModelRouter initialized');
 
 const voiceHandler = new VoiceHandler();
 console.log('[Init] VoiceHandler initialized');
-
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://forgeteam:forgeteam_secret@localhost:5432/forgeteam';
-const pool = new Pool({ connectionString: DATABASE_URL });
-const redis = new Redis(REDIS_URL);
 
 const memoryManager = new MemoryManager(pool, redis);
 console.log('[Init] MemoryManager initialized');
@@ -198,6 +210,12 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
+function asyncHandler(fn: (req: any, res: any, next: express.NextFunction) => Promise<any>): express.RequestHandler {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
 /**
  * Health check endpoint.
  * Returns system status including all manager states.
@@ -235,11 +253,11 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.get('/api/health/providers', async (_req, res) => {
+app.get('/api/health/providers', asyncHandler(async (_req, res) => {
   const health = await agentRunner.checkProviderHealth();
   const allHealthy = Object.values(health).every(h => h.available);
   res.status(allHealthy ? 200 : 503).json({ providers: health });
-});
+}));
 
 /**
  * Agent list endpoint.
@@ -342,6 +360,37 @@ app.post('/api/tasks', (req, res) => {
 });
 
 /**
+ * Update task via REST (Kanban drag-and-drop, priority changes, reassignment).
+ */
+app.put('/api/tasks/:taskId', (req, res) => {
+  const task = taskManager.getTask(req.params.taskId);
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' });
+    return;
+  }
+
+  const updates = req.body ?? {};
+  // Map 'column' to 'status' if provided (Kanban drag-and-drop sends column names)
+  if (updates.column && !updates.status) {
+    updates.status = updates.column;
+  }
+
+  if (updates.status && updates.status !== task.status) {
+    taskManager.moveTask(task.id, updates.status, 'user');
+  }
+  if (updates.assignedTo) {
+    taskManager.assignTask(task.id, updates.assignedTo, 'user');
+  }
+  if (updates.priority) {
+    taskManager.updateTask(task.id, { priority: updates.priority }, 'user');
+  }
+
+  const updated = taskManager.getTask(task.id);
+  io.emit('task_update', { type: 'moved', event: { taskId: task.id, sessionId: task.sessionId, currentStatus: updated?.status } });
+  res.json({ task: updated, timestamp: new Date().toISOString() });
+});
+
+/**
  * Task statistics endpoint.
  */
 app.get('/api/tasks/stats/:sessionId', (req, res) => {
@@ -359,12 +408,70 @@ app.get('/api/models/assignments', (_req, res) => {
 });
 
 /**
+ * Save model assignments for agents.
+ */
+app.post('/api/models/assignments', express.json(), asyncHandler(async (req, res): Promise<void> => {
+  const { assignments } = req.body ?? {};
+  if (!assignments || typeof assignments !== 'object') {
+    res.status(400).json({ error: 'assignments object required' });
+    return;
+  }
+
+  for (const [agentId, config] of Object.entries(assignments) as [string, any][]) {
+    const primary = config?.primary;
+    const fallback = config?.fallback || config?.fallback2 || '';
+
+    // Update in-memory model router
+    if (primary) {
+      modelRouter.updateAssignment(agentId as any, primary as any, (fallback || primary) as any);
+    }
+
+    // Update cost cap if provided
+    if (config?.dailyCap !== undefined) {
+      const dailyCap = Number(config.dailyCap);
+      modelRouter.setCostCap(agentId, {
+        dailyCapUsd: dailyCap,
+        weeklyCapUsd: dailyCap * 5,
+        alertThreshold: 0.8,
+      });
+    }
+
+    // Persist to PostgreSQL
+    const fallbackModels = [config?.fallback, config?.fallback2].filter(Boolean);
+    pool.query(
+      `UPDATE model_configs
+         SET primary_model   = $1,
+             fallback_models = $2,
+             temperature     = $3,
+             daily_cap_usd   = $4,
+             weekly_cap_usd  = $5,
+             updated_at      = NOW()
+       WHERE agent_id = $6`,
+      [
+        primary,
+        JSON.stringify(fallbackModels),
+        config?.temperature ?? 0.3,
+        config?.dailyCap ?? 50,
+        (config?.dailyCap ?? 50) * 5,
+        agentId,
+      ]
+    ).catch((err: any) => {
+      console.warn(`[Gateway] Failed to persist model config for ${agentId}:`, err?.message);
+    });
+  }
+
+  const updated = modelRouter.getAllAssignments();
+  res.json({ success: true, assignments: updated, timestamp: new Date().toISOString() });
+}));
+
+/**
  * Model cost summary endpoint.
  */
 app.get('/api/models/costs', (req, res) => {
   const summary = modelRouter.getCostSummary(
     req.query.from as string,
-    req.query.to as string
+    req.query.to as string,
+    req.query.agentId as string
   );
   res.json({ summary, timestamp: new Date().toISOString() });
 });
@@ -397,11 +504,16 @@ app.get('/api/viadp/summary', (_req, res) => {
  * VIADP delegation requests endpoint.
  */
 app.get('/api/viadp/delegations', (req, res) => {
-  const delegations = viadpEngine.getAllRequests({
+  let delegations = viadpEngine.getAllRequests({
     status: req.query.status as any,
     from: req.query.from as any,
     to: req.query.to as any,
   });
+  // Support ?agentId= filter (matches from OR to)
+  const agentId = req.query.agentId as string | undefined;
+  if (agentId) {
+    delegations = delegations.filter(d => d.from === agentId || d.to === agentId);
+  }
   res.json({ delegations, timestamp: new Date().toISOString() });
 });
 
@@ -428,7 +540,9 @@ app.get('/api/viadp/audit', (req, res) => {
     action: req.query.action as any,
     since: req.query.since as string,
   });
-  res.json({ entries, total: entries.length, timestamp: new Date().toISOString() });
+  const limit = parseInt(req.query.limit as string) || 0;
+  const result = limit > 0 ? entries.slice(0, limit) : entries;
+  res.json({ entries: result, total: entries.length, timestamp: new Date().toISOString() });
 });
 
 /**
@@ -443,7 +557,7 @@ app.get('/api/voice/status', (_req, res) => {
  * Voice transcribe endpoint (STT).
  * Accepts { audioBase64, language } and returns transcribed text.
  */
-app.post('/api/voice/transcribe', async (req, res) => {
+app.post('/api/voice/transcribe', asyncHandler(async (req, res) => {
   try {
     const { audioBase64, language } = req.body ?? {};
     if (!audioBase64) {
@@ -457,13 +571,13 @@ app.post('/api/voice/transcribe', async (req, res) => {
     console.error('[Voice] Transcribe error:', error);
     res.status(500).json({ error: error?.message ?? 'Transcription failed' });
   }
-});
+}));
 
 /**
  * Voice synthesize endpoint (TTS).
  * Accepts { text, language } and returns audio base64.
  */
-app.post('/api/voice/synthesize', async (req, res) => {
+app.post('/api/voice/synthesize', asyncHandler(async (req, res) => {
   try {
     const { text, language } = req.body ?? {};
     if (!text) {
@@ -476,7 +590,7 @@ app.post('/api/voice/synthesize', async (req, res) => {
     console.error('[Voice] Synthesize error:', error);
     res.status(500).json({ error: error?.message ?? 'Synthesis failed' });
   }
-});
+}));
 
 // -- OpenClaw REST endpoints --
 
@@ -490,7 +604,7 @@ app.get('/api/openclaw/tools', (_req, res) => {
   res.json({ tools, timestamp: new Date().toISOString() });
 });
 
-app.post('/api/openclaw/tools/:name/execute', express.json(), async (req, res) => {
+app.post('/api/openclaw/tools/:name/execute', express.json(), asyncHandler(async (req, res) => {
   try {
     const result = await toolRunner.executeTool(req.params.name, req.body.input ?? {}, {
       sessionId: req.body.sessionId,
@@ -500,7 +614,7 @@ app.post('/api/openclaw/tools/:name/execute', express.json(), async (req, res) =
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Tool execution failed' });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Workflow REST Endpoints
@@ -515,7 +629,7 @@ app.get('/api/workflows', (_req, res) => {
   }
 });
 
-app.post('/api/workflows/start', express.json(), async (req, res) => {
+app.post('/api/workflows/start', express.json(), asyncHandler(async (req, res) => {
   try {
     const { definitionName, sessionId } = req.body;
     if (!definitionName || !sessionId) {
@@ -527,7 +641,7 @@ app.post('/api/workflows/start', express.json(), async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to start workflow' });
   }
-});
+}));
 
 app.post('/api/workflows/pause-all', (_req, res) => {
   try {
@@ -539,7 +653,7 @@ app.post('/api/workflows/pause-all', (_req, res) => {
   }
 });
 
-app.post('/api/workflows/resume-all', async (_req, res) => {
+app.post('/api/workflows/resume-all', asyncHandler(async (_req, res) => {
   try {
     const result = await workflowExecutor.resumeAllWorkflows();
     io.emit('workflow_update', { type: 'global_resume', resumed: result.resumed });
@@ -547,14 +661,14 @@ app.post('/api/workflows/resume-all', async (_req, res) => {
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
-});
+}));
 
 app.get('/api/workflows/status', (_req, res) => {
   const statuses = workflowExecutor.getWorkflowStatuses();
   res.json({ workflows: statuses });
 });
 
-app.post('/api/workflows/:instanceId/pause', async (req, res) => {
+app.post('/api/workflows/:instanceId/pause', asyncHandler(async (req, res) => {
   try {
     await workflowExecutor.pauseWorkflow(req.params.instanceId);
     io.emit('workflow_update', { type: 'instance_paused', instanceId: req.params.instanceId });
@@ -562,9 +676,9 @@ app.post('/api/workflows/:instanceId/pause', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to pause workflow' });
   }
-});
+}));
 
-app.post('/api/workflows/:instanceId/resume', express.json(), async (req, res) => {
+app.post('/api/workflows/:instanceId/resume', express.json(), asyncHandler(async (req, res) => {
   try {
     const { approvalData } = req.body;
     await workflowExecutor.resumeWorkflow(req.params.instanceId, approvalData);
@@ -573,25 +687,25 @@ app.post('/api/workflows/:instanceId/resume', express.json(), async (req, res) =
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to resume workflow' });
   }
-});
+}));
 
-app.get('/api/workflows/:instanceId/progress', async (req, res) => {
+app.get('/api/workflows/:instanceId/progress', asyncHandler(async (req, res) => {
   try {
     const progress = await workflowExecutor.getProgress(req.params.instanceId);
     res.json({ progress, timestamp: new Date().toISOString() });
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to get progress' });
   }
-});
+}));
 
-app.post('/api/workflows/:instanceId/cancel', async (req, res) => {
+app.post('/api/workflows/:instanceId/cancel', asyncHandler(async (req, res) => {
   try {
     await workflowExecutor.cancelWorkflow(req.params.instanceId);
     res.json({ status: 'cancelled', timestamp: new Date().toISOString() });
   } catch (error: any) {
     res.status(500).json({ error: error?.message ?? 'Failed to cancel workflow' });
   }
-});
+}));
 
 app.get('/api/workflows/:name', (req, res) => {
   try {
@@ -636,10 +750,10 @@ app.get('/api/tools/:agentId', (req, res) => {
   res.json({ agentId, tools });
 });
 
-app.get('/api/sandboxes', async (_req, res) => {
+app.get('/api/sandboxes', asyncHandler(async (_req, res) => {
   const sandboxes = await sandboxManager.listActive();
   res.json({ sandboxes });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Human-in-the-Loop REST Endpoints
@@ -773,7 +887,7 @@ app.post('/api/agents/:agentId/human-message', express.json(), (req, res) => {
 
 // -- Memory REST endpoints --
 
-app.get('/api/memory/search', async (req, res) => {
+app.get('/api/memory/search', asyncHandler(async (req, res) => {
   try {
     const query = (req.query.q as string) ?? '';
     const scope = req.query.scope as string | undefined;
@@ -790,9 +904,9 @@ app.get('/api/memory/search', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? 'Memory search failed' });
   }
-});
+}));
 
-app.get('/api/memory/stats', async (req, res) => {
+app.get('/api/memory/stats', asyncHandler(async (req, res) => {
   try {
     const statsResult = await pool.query(`
       SELECT
@@ -811,9 +925,9 @@ app.get('/api/memory/stats', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? 'Memory stats failed' });
   }
-});
+}));
 
-app.post('/api/memory/store', async (req, res) => {
+app.post('/api/memory/store', asyncHandler(async (req, res) => {
   try {
     const { scope, content, metadata, agentId, projectId, teamId, threadId, tags, importance } = req.body;
 
@@ -835,7 +949,7 @@ app.post('/api/memory/store', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? 'Memory store failed' });
   }
-});
+}));
 
 /**
  * Seed / Demo endpoint.
@@ -1149,7 +1263,7 @@ function autoAssignAgent(taskTitle: string, taskDescription: string): AgentId | 
   return 'bmad-master';
 }
 
-app.post('/api/tasks/:taskId/start', async (req, res) => {
+app.post('/api/tasks/:taskId/start', asyncHandler(async (req, res) => {
   try {
     const task = taskManager.getTask(req.params.taskId);
     if (!task) {
@@ -1189,6 +1303,57 @@ app.post('/api/tasks/:taskId/start', async (req, res) => {
       `Please analyze this task and provide your implementation plan or deliverable.`;
 
     const result = await agentRunner.processUserMessage(assignedAgent, taskPrompt, task.sessionId);
+
+    // -------------------------------------------------------------------
+    // Extract code-block artifacts from the agent response
+    // -------------------------------------------------------------------
+    const codeBlockRegex = /```(\w+)?\s*\n([\s\S]*?)```/g;
+    const langExtMap: Record<string, string> = {
+      html: '.html', css: '.css', js: '.js', javascript: '.js',
+      ts: '.ts', typescript: '.ts', tsx: '.tsx', jsx: '.jsx',
+      json: '.json', yaml: '.yaml', yml: '.yml', xml: '.xml',
+      sql: '.sql', py: '.py', python: '.py', sh: '.sh', bash: '.sh',
+      dockerfile: '.Dockerfile', md: '.md', markdown: '.md',
+      java: '.java', go: '.go', rust: '.rs', c: '.c', cpp: '.cpp',
+    };
+    const langContentType: Record<string, string> = {
+      html: 'text/html', css: 'text/css', js: 'application/javascript',
+      json: 'application/json', yaml: 'text/yaml', sql: 'text/sql',
+      xml: 'application/xml', md: 'text/markdown', py: 'text/x-python',
+    };
+
+    let blockIndex = 0;
+    let codeMatch: RegExpExecArray | null;
+    const extractedArtifacts: string[] = [];
+
+    while ((codeMatch = codeBlockRegex.exec(result.content)) !== null) {
+      const lang = (codeMatch[1] ?? '').toLowerCase();
+      const code = codeMatch[2];
+      if (!code || code.trim().length < 10) continue;
+
+      const ext = langExtMap[lang] || '.txt';
+      const slug = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+      const filename = blockIndex === 0
+        ? `${slug}${ext}`
+        : `${slug}-${blockIndex}${ext}`;
+      const artifactKey = `${task.sessionId}/${task.id}/${filename}`;
+      const ct = langContentType[lang] || 'text/plain';
+
+      try {
+        await storageService.upload(artifactKey, code, ct);
+        const downloadUrl = `/api/artifacts/download?key=${encodeURIComponent(artifactKey)}`;
+        taskManager.addArtifact(task.id, downloadUrl);
+        extractedArtifacts.push(filename);
+        console.log(`[Artifacts] Saved ${filename} (${code.length} bytes) for task ${task.id}`);
+      } catch (artifactErr: any) {
+        console.warn(`[Artifacts] Failed to save ${filename}:`, artifactErr?.message);
+      }
+      blockIndex++;
+    }
+
+    if (extractedArtifacts.length > 0) {
+      console.log(`[Artifacts] Extracted ${extractedArtifacts.length} artifact(s) for task ${task.id}: ${extractedArtifacts.join(', ')}`);
+    }
 
     // Store the agent response on the task so it persists through API polling
     taskManager.updateTask(task.id, {
@@ -1236,7 +1401,7 @@ app.post('/api/tasks/:taskId/start', async (req, res) => {
     console.error('[TaskStart] Error:', error);
     res.status(500).json({ error: error?.message ?? 'Failed to start task' });
   }
-});
+}));
 
 app.post('/api/tasks/:taskId/approve', (req, res) => {
   const task = taskManager.getTask(req.params.taskId);
@@ -1273,7 +1438,7 @@ app.post('/api/tasks/:taskId/approve', (req, res) => {
   });
 });
 
-app.post('/api/tasks/:taskId/reject', async (req, res) => {
+app.post('/api/tasks/:taskId/reject', asyncHandler(async (req, res) => {
   try {
     const task = taskManager.getTask(req.params.taskId);
     if (!task) {
@@ -1320,7 +1485,7 @@ app.post('/api/tasks/:taskId/reject', async (req, res) => {
     console.error('[TaskReject] Error:', error);
     res.status(500).json({ error: error?.message ?? 'Failed to process rejection' });
   }
-});
+}));
 
 app.post('/api/tasks/:taskId/assign', (req, res) => {
   const task = taskManager.getTask(req.params.taskId);
@@ -1344,10 +1509,20 @@ app.post('/api/tasks/:taskId/assign', (req, res) => {
   taskManager.assignTask(task.id, agentId, 'user');
   agentManager.assignTask(agentId, task.id, task.sessionId);
 
-  io.emit('task_update', { type: 'assigned', event: { taskId: task.id, sessionId: task.sessionId, assignedTo: agentId } });
+  const updatedTask = taskManager.getTask(task.id);
+  io.emit('task_update', {
+    type: 'assigned',
+    event: {
+      taskId: task.id,
+      sessionId: task.sessionId,
+      assignedTo: agentId,
+      currentStatus: updatedTask?.status,
+      data: updatedTask,
+    },
+  });
 
   res.json({
-    task: taskManager.getTask(task.id),
+    task: updatedTask,
     assignedTo: agentId,
     timestamp: new Date().toISOString(),
   });
@@ -1467,32 +1642,49 @@ app.get('/api/system/sovereignty', (_req, res) => {
 // ---------------------------------------------------------------------------
 
 // POST /api/artifacts/upload — upload an artifact
-app.post('/api/artifacts/upload', express.raw({ type: '*/*', limit: '50mb' }), async (req, res) => {
+app.post('/api/artifacts/upload', express.raw({ type: '*/*', limit: '50mb' }), asyncHandler(async (req, res): Promise<void> => {
   const { sessionId, taskId, filename } = req.query as { sessionId: string; taskId: string; filename: string };
   if (!sessionId || !taskId || !filename) {
-    return res.status(400).json({ error: 'Missing sessionId, taskId, or filename query params' });
+    res.status(400).json({ error: 'Missing sessionId, taskId, or filename query params' });
+    return;
   }
   const key = `${sessionId}/${taskId}/${filename}`;
   const contentType = req.headers['content-type'] ?? 'application/octet-stream';
   const result = await storageService.upload(key, req.body, contentType);
   res.json(result);
-});
+}));
 
 // GET /api/artifacts/download — download an artifact
-app.get('/api/artifacts/download', async (req, res) => {
+app.get('/api/artifacts/download', asyncHandler(async (req, res): Promise<void> => {
   const { key } = req.query as { key: string };
-  if (!key) return res.status(400).json({ error: 'Missing key query param' });
-  const { body, contentType } = await storageService.download(key);
-  res.setHeader('Content-Type', contentType);
-  res.send(body);
-});
+  if (!key) { res.status(400).json({ error: 'Missing key query param' }); return; }
+  try {
+    const { body, contentType } = await storageService.download(key);
+    res.setHeader('Content-Type', contentType);
+    res.send(body);
+  } catch (dlErr: any) {
+    console.warn(`[Artifacts] Download failed for key="${key}":`, dlErr?.message);
+    res.status(404).json({ error: 'Artifact not found', key });
+  }
+}));
 
 // GET /api/artifacts/list — list artifacts for a task
-app.get('/api/artifacts/list', async (req, res) => {
+app.get('/api/artifacts/list', asyncHandler(async (req, res) => {
   const { sessionId, taskId } = req.query as { sessionId: string; taskId: string };
   const prefix = taskId ? `${sessionId ?? ''}/${taskId}/` : `${sessionId ?? ''}/`;
   const objects = await storageService.list(prefix);
   res.json({ objects, timestamp: new Date().toISOString() });
+}));
+
+// ---------------------------------------------------------------------------
+// Global Express Error Handler
+// ---------------------------------------------------------------------------
+
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Express] Unhandled route error:', err?.message ?? err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: err?.message ?? 'Internal server error' });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2092,6 +2284,41 @@ modelRouter.on('cost:alert', (alertData) => {
   });
 });
 
+// --- Escalation creation events (from AgentRunner) ---
+agentRunner.onEscalationCreated = (escalation) => {
+  io.emit('escalation_update', {
+    type: 'created',
+    escalation,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+// --- Voice transcript events ---
+voiceHandler.on('voice:stt-completed', (result) => {
+  io.emit('voice_transcript', {
+    id: result.id,
+    sessionId: 'default',
+    direction: 'stt',
+    language: result.language,
+    text: result.text,
+    confidence: result.confidence,
+    duration: `${(result.durationMs / 1000).toFixed(1)}s`,
+    timestamp: result.timestamp,
+  });
+});
+
+voiceHandler.on('voice:tts-completed', (result) => {
+  io.emit('voice_transcript', {
+    id: result.id,
+    sessionId: 'default',
+    direction: 'tts',
+    language: result.language,
+    text: '',
+    duration: `${(result.durationMs / 1000).toFixed(1)}s`,
+    timestamp: result.timestamp,
+  });
+});
+
 console.log('[Init] Socket.IO server wired to manager events');
 
 // ---------------------------------------------------------------------------
@@ -2114,6 +2341,18 @@ httpServer.listen(PORT, HOST, () => {
   console.log('==========================================================');
 
   storageService.ensureBucket().catch(err => console.warn('[Storage] Bucket init deferred:', err.message));
+
+  // Load persisted state from PostgreSQL (graceful degradation if DB unavailable)
+  (async () => {
+    try {
+      await taskManager.loadFromDB();
+      await sessionManager.loadFromDB();
+      await agentManager.loadFromDB();
+      console.log('[Init] Persisted state loaded from PostgreSQL');
+    } catch (err: any) {
+      console.warn('[Init] Failed to load persisted state from DB (continuing in-memory only):', err?.message);
+    }
+  })();
 });
 
 // ---------------------------------------------------------------------------

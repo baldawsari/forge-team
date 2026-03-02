@@ -14,6 +14,7 @@ import { useLocale } from "@/lib/locale-context";
 import { useSocket } from "@/lib/socket";
 import type { ViadpUpdateEvent } from "@/lib/socket";
 import { cn } from "@/lib/utils";
+import { fetchViadpDelegations } from "@/lib/api";
 import type { DelegationEntry, Agent } from "@/lib/mock-data";
 
 interface ViadpAuditLogProps {
@@ -75,12 +76,9 @@ export default function ViadpAuditLog({ delegations: initialDelegations, agents 
 
     const pollInterval = setInterval(async () => {
       try {
-        const res = await fetch('http://localhost:18789/api/viadp/delegations');
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setDelegations(data);
-          }
+        const data = await fetchViadpDelegations();
+        if (data.delegations && Array.isArray(data.delegations) && data.delegations.length > 0) {
+          setDelegations(data.delegations as unknown as DelegationEntry[]);
         }
       } catch {
         // Gateway offline - keep using current data
@@ -93,14 +91,14 @@ export default function ViadpAuditLog({ delegations: initialDelegations, agents 
   const filteredDelegations = delegations.filter((d) => {
     const matchesAgent =
       agentFilter === "all" ||
-      d.delegator === agentFilter ||
-      d.delegatee === agentFilter;
+      d.from === agentFilter ||
+      d.to === agentFilter;
     const matchesStatus = statusFilter === "all" || d.status === statusFilter;
     return matchesAgent && matchesStatus;
   });
 
   const uniqueAgentNames = [
-    ...new Set(delegations.flatMap((d) => [d.delegator, d.delegatee])),
+    ...new Set(delegations.flatMap((d) => [d.from, d.to])),
   ];
 
   function formatTimestamp(ts: string): string {
@@ -186,13 +184,13 @@ export default function ViadpAuditLog({ delegations: initialDelegations, agents 
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold text-text-primary">
-                      {delegation.delegator}
+                      {delegation.from}
                     </span>
                     <span className="text-text-muted/40 text-[10px]">
                       {isAr ? "←" : "→"}
                     </span>
                     <span className="text-xs font-semibold text-text-primary">
-                      {delegation.delegatee}
+                      {delegation.to}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -216,7 +214,7 @@ export default function ViadpAuditLog({ delegations: initialDelegations, agents 
 
                 {/* Task */}
                 <p className="text-xs text-text-secondary mb-2 bidi-auto">
-                  {isAr ? delegation.taskAr : delegation.task}
+                  {isAr ? delegation.taskAr : delegation.taskId}
                 </p>
 
                 {/* Meta */}

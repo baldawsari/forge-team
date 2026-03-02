@@ -14,7 +14,7 @@ interface WorkflowProgressProps {
 
 function getPhaseIcon(status: string) {
   switch (status) {
-    case "complete":
+    case "completed":
       return <CheckCircle2 size={18} className="text-success" />;
     case "active":
       return <PlayCircle size={18} className="text-accent" />;
@@ -25,7 +25,7 @@ function getPhaseIcon(status: string) {
 
 function getStatusLabel(status: string, isAr: boolean): string {
   switch (status) {
-    case "complete":
+    case "completed":
       return isAr ? "مكتمل" : "Complete";
     case "active":
       return isAr ? "نشط" : "Active";
@@ -129,7 +129,7 @@ export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: Wo
                     insetInlineStart: "50%",
                     width: "100%",
                     backgroundColor:
-                      phase.status === "complete"
+                      phase.status === "completed"
                         ? "var(--color-success)"
                         : "rgba(42, 74, 127, 0.3)",
                   }}
@@ -144,7 +144,7 @@ export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: Wo
                 <p
                   className={cn(
                     "text-[11px] font-medium text-center mb-1",
-                    phase.status === "complete" && "text-success",
+                    phase.status === "completed" && "text-success",
                     phase.status === "active" && "text-accent",
                     phase.status === "pending" && "text-text-muted/50"
                   )}
@@ -157,7 +157,7 @@ export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: Wo
                   <div
                     className={cn(
                       "h-full rounded-full transition-all duration-500",
-                      phase.status === "complete" && "bg-success",
+                      phase.status === "completed" && "bg-success",
                       phase.status === "active" && "bg-accent",
                       phase.status === "pending" && "bg-text-muted/20"
                     )}
@@ -207,7 +207,7 @@ export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: Wo
                   <div
                     className={cn(
                       "absolute top-0 h-full rounded transition-all",
-                      phase.status === "complete" && "bg-success/40",
+                      phase.status === "completed" && "bg-success/40",
                       phase.status === "active" && "bg-accent/40",
                       phase.status === "pending" && "bg-text-muted/10"
                     )}
@@ -220,7 +220,7 @@ export default function WorkflowProgress({ phases, onPauseAll, onResumeAll }: Wo
                     <div
                       className={cn(
                         "h-full rounded",
-                        phase.status === "complete" && "bg-success",
+                        phase.status === "completed" && "bg-success",
                         phase.status === "active" && "bg-accent",
                         phase.status === "pending" && "bg-text-muted/20"
                       )}

@@ -77,7 +77,7 @@ export interface GatewayTask {
 
 export interface GatewayKanbanColumn {
   id: string;
-  title: string;
+  label: string;
   tasks: GatewayTask[];
 }
 
@@ -106,10 +106,10 @@ export interface CostsResponse {
     totalRequests: number;
     totalInputTokens: number;
     totalOutputTokens: number;
-    perAgent: Record<string, { cost: number; requests: number; tokens: number }>;
-    perModel: Record<string, { cost: number; requests: number }>;
-    perProvider: Record<string, { cost: number; requests: number }>;
-    perTier: Record<string, { cost: number; requests: number }>;
+    perAgent: Record<string, number>;
+    perModel: Record<string, number>;
+    perProvider: Record<string, number>;
+    perTier: Record<string, number>;
   };
 }
 
@@ -123,23 +123,30 @@ export interface ViadpSummary {
 
 export interface ViadpDelegation {
   id: string;
-  delegator: string;
-  delegatee: string;
-  task: string;
-  taskAr?: string;
-  trustScore: number;
+  from: string;
+  to: string;
+  taskId: string;
+  sessionId: string;
   status: string;
-  timestamp: string;
-  proofChain: string[];
+  reason: string;
+  capabilityScore: number;
+  timestamp?: string;
+  createdAt?: string;
 }
 
 export interface ViadpTrust {
-  trust: {
+  agentId: string;
+  scores: Array<{
+    agentId: string;
     score: number;
     alpha: number;
     beta: number;
+    successes: number;
+    failures: number;
+    lastUpdated: string;
     history: unknown[];
-  };
+  }>;
+  timestamp: string;
 }
 
 export interface ViadpAuditEntry {
@@ -148,12 +155,14 @@ export interface ViadpAuditEntry {
 }
 
 export interface ConnectionsResponse {
-  connections: {
+  stats: {
     total: number;
     users: number;
     agents: number;
     dashboards: number;
+    connectedAgents: string[];
   };
+  timestamp: string;
 }
 
 // --- API functions ---
@@ -167,7 +176,7 @@ export async function fetchAgents(): Promise<{ agents: GatewayAgent[] }> {
 }
 
 export async function fetchAgent(agentId: string) {
-  return fetchAPI<{ agent: GatewayAgent & Record<string, unknown> }>(`/api/agents/${agentId}`);
+  return fetchAPI<{ config: Record<string, unknown>; state: Record<string, unknown>; timestamp: string }>(`/api/agents/${agentId}`);
 }
 
 export async function fetchTasks(sessionId?: string): Promise<{ tasks: GatewayTask[] }> {

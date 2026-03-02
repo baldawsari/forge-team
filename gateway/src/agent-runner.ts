@@ -144,6 +144,9 @@ export class AgentRunner {
 
   private escalations: EscalationRecord[] = [];
 
+  /** Callback fired when a new escalation is created (wired by index.ts for socket emission) */
+  public onEscalationCreated?: (escalation: EscalationRecord) => void;
+
   constructor(deps: AgentRunnerDeps) {
     this.modelRouter = deps.modelRouter;
     this.agentManager = deps.agentManager;
@@ -242,6 +245,7 @@ export class AgentRunner {
 
     // 8. Call the appropriate provider API with retry logic
     let result!: { content: string; inputTokens: number; outputTokens: number };
+    const callStartTime = Date.now();
 
     const MAX_RETRIES = 1;
     let lastError: Error | null = null;
@@ -314,6 +318,7 @@ export class AgentRunner {
       result.inputTokens,
       result.outputTokens,
       routingResult.classifiedTier,
+      Date.now() - callStartTime,
     );
 
     // 9b. Check confidence and create escalation if low
@@ -332,6 +337,7 @@ export class AgentRunner {
         status: 'pending',
       };
       this.escalations.push(escalation);
+      this.onEscalationCreated?.(escalation);
       console.log(`[AgentRunner] Escalation created for ${agentId}: confidence=${confidence.toFixed(2)}`);
     }
 

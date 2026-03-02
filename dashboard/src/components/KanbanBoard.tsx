@@ -19,7 +19,7 @@ interface KanbanBoardProps {
   tasks: Task[];
   agents: Agent[];
   messages?: Message[];
-  onTaskMove: (taskId: string, newColumn: Task["column"]) => void;
+  onTaskMove: (taskId: string, newColumn: Task["status"]) => void;
   onTaskCreate?: (task: { title: string; description: string; priority: string; assignedTo?: string }) => void;
   onTaskStart?: (taskId: string) => void;
   onTaskApprove?: (taskId: string) => void;
@@ -28,10 +28,10 @@ interface KanbanBoardProps {
   onSwitchToConversation?: (agentId: string) => void;
 }
 
-const columns: { id: Task["column"]; enLabel: string; arLabel: string }[] = [
+const columns: { id: Task["status"]; enLabel: string; arLabel: string }[] = [
   { id: "backlog", enLabel: "Backlog", arLabel: "تراكم" },
   { id: "todo", enLabel: "To Do", arLabel: "للتنفيذ" },
-  { id: "inProgress", enLabel: "In Progress", arLabel: "قيد التنفيذ" },
+  { id: "in-progress", enLabel: "In Progress", arLabel: "قيد التنفيذ" },
   { id: "review", enLabel: "Review", arLabel: "مراجعة" },
   { id: "done", enLabel: "Done", arLabel: "مكتمل" },
 ];
@@ -49,7 +49,7 @@ function getColumnColor(id: string): string {
       return "#6c6c80";
     case "todo":
       return "#3b82f6";
-    case "inProgress":
+    case "in-progress":
       return "#f59e0b";
     case "review":
       return "#8b5cf6";
@@ -129,7 +129,7 @@ function TaskCardExpanded({ task, agent, locale, messages, open, onOpenChange, o
         <div className="flex items-center gap-4 text-xs text-text-muted">
           <span className="flex items-center gap-1 ltr-nums">
             <Clock size={14} />
-            {formatTimeElapsed(task.startTime, locale)}
+            {formatTimeElapsed(task.startedAt ?? "", locale)}
           </span>
         </div>
 
@@ -157,18 +157,25 @@ function TaskCardExpanded({ task, agent, locale, messages, open, onOpenChange, o
           <div className="space-y-2">
             {task.artifacts && task.artifacts.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
-                {task.artifacts.map((artifact, i) => (
-                  <a
-                    key={i}
-                    href={artifact}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary/15 text-primary-light border border-primary/25 hover:bg-primary/25 transition-colors cursor-pointer"
-                  >
-                    <FileText size={10} />
-                    {artifact}
-                  </a>
-                ))}
+                {task.artifacts.map((artifact, i) => {
+                  const isPath = artifact.startsWith('/api/');
+                  const href = isPath ? `http://localhost:18789${artifact}` : artifact;
+                  const displayName = isPath
+                    ? decodeURIComponent(artifact.split('/').pop()?.replace(/\?.*/, '') || artifact)
+                    : artifact;
+                  return (
+                    <a
+                      key={i}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary/15 text-primary-light border border-primary/25 hover:bg-primary/25 transition-colors cursor-pointer"
+                    >
+                      <FileText size={10} />
+                      {displayName}
+                    </a>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-xs text-text-muted p-2 rounded bg-surface-light/30">
@@ -216,7 +223,7 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
     const taskId = result.draggableId;
-    const newColumn = result.destination.droppableId as Task["column"];
+    const newColumn = result.destination.droppableId as Task["status"];
     onTaskMove(taskId, newColumn);
   };
 
@@ -312,7 +319,7 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4" style={{ direction: "ltr" }}>
           {orderedColumns.map((column) => {
-            const columnTasks = tasks.filter((t) => t.column === column.id);
+            const columnTasks = tasks.filter((t) => t.status === column.id);
             const color = getColumnColor(column.id);
 
             return (
@@ -351,7 +358,7 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
                       )}
                     >
                       {columnTasks.map((task, index) => {
-                        const agent = getAgentForTask(task.assignedAgent);
+                        const agent = getAgentForTask(task.assignedTo);
                         return (
                           <Draggable
                             key={task.id}
@@ -413,13 +420,13 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
                                   )}
                                   <span className="flex items-center gap-1 ltr-nums">
                                     <Clock size={12} />
-                                    {formatTimeElapsed(task.startTime, locale)}
+                                    {formatTimeElapsed(task.startedAt ?? "", locale)}
                                   </span>
                                 </div>
 
                                 {/* Action buttons */}
                                 <div className="mt-2 pt-2 border-t border-border/20" onClick={(e) => e.stopPropagation()}>
-                                  {(task.column === "backlog" || task.column === "todo") && onTaskStart && (
+                                  {(task.status === "backlog" || task.status === "todo") && onTaskStart && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -440,14 +447,14 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
                                     </Button>
                                   )}
 
-                                  {task.column === "inProgress" && (
+                                  {task.status === "in-progress" && (
                                     <div className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] text-amber-400">
                                       <Loader2 size={12} className="animate-spin" />
                                       <span>{t("kanban.working") || (isAr ? "يعمل..." : "Working...")}</span>
                                     </div>
                                   )}
 
-                                  {task.column === "review" && (
+                                  {task.status === "review" && (
                                     <div className="flex gap-2">
                                       {onTaskApprove && (
                                         <Button
@@ -476,7 +483,7 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
                                     </div>
                                   )}
 
-                                  {task.column === "done" && (
+                                  {task.status === "done" && (
                                     <div className="flex items-center justify-center gap-1.5 py-1 text-[11px] text-green-400/60">
                                       <Check size={12} />
                                       <span>{isAr ? "مكتمل" : "Done"}</span>
@@ -507,7 +514,7 @@ export default function KanbanBoard({ tasks, agents, messages, onTaskMove, onTas
       {expandedTaskData && (
         <TaskCardExpanded
           task={expandedTaskData}
-          agent={getAgentForTask(expandedTaskData.assignedAgent)}
+          agent={getAgentForTask(expandedTaskData.assignedTo)}
           locale={locale}
           messages={messages}
           open={!!expandedTask}

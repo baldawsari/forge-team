@@ -169,11 +169,11 @@ const AGENT_META: Record<
 function mapGatewayAgent(
   gw: GatewayAgent,
   assignments: Record<string, ModelAssignment>,
-  costByAgent: Record<string, { cost: number; requests: number; tokens: number }>
+  costByAgent: Record<string, number>
 ): Agent {
   const meta = AGENT_META[gw.id];
   const assignment = assignments[gw.id];
-  const costInfo = costByAgent[gw.id];
+  const agentCost = costByAgent[gw.id] ?? 0;
 
   const status = (["idle", "working", "reviewing", "blocked"].includes(gw.status)
     ? gw.status
@@ -187,25 +187,15 @@ function mapGatewayAgent(
     roleAr: meta?.roleAr ?? gw.role,
     avatar: meta?.avatar ?? "\uD83E\uDD16",
     status,
-    currentTask: gw.currentTaskId,
-    currentTaskAr: gw.currentTaskId,
+    currentTaskId: gw.currentTaskId,
+    currentTaskIdAr: gw.currentTaskId,
     model: assignment?.primary ?? meta?.defaultModel ?? "gemini-3.1-pro",
     fallbackModel: assignment?.fallback ?? meta?.defaultFallback ?? "claude-sonnet-4-6",
     temperature: 0.3,
-    tokensUsed: costInfo?.tokens ?? 0,
-    cost: costInfo?.cost ?? 0,
+    tokensUsed: 0,
+    cost: agentCost,
   };
 }
-
-// Map gateway task status values to dashboard column names
-const statusToColumn: Record<string, Task["column"]> = {
-  backlog: "backlog",
-  todo: "todo",
-  "in-progress": "inProgress",
-  review: "review",
-  done: "done",
-  cancelled: "done",
-};
 
 // Map gateway tasks to the dashboard Task interface
 function mapGatewayTask(gw: {
@@ -220,8 +210,6 @@ function mapGatewayTask(gw: {
   tags?: string[];
   metadata?: Record<string, unknown>;
 }): Task {
-  const column = statusToColumn[gw.status] ?? "backlog";
-
   const validPriorities = ["critical", "high", "medium", "low"];
   const priority = (validPriorities.includes(gw.priority) ? gw.priority : "medium") as Task["priority"];
 
@@ -231,10 +219,10 @@ function mapGatewayTask(gw: {
     titleAr: gw.title,
     description: gw.description,
     descriptionAr: gw.description,
-    column,
-    assignedAgent: gw.assignedTo,
+    status: (gw.status || "backlog") as Task["status"],
+    assignedTo: gw.assignedTo,
     priority,
-    startTime: gw.createdAt || new Date().toISOString(),
+    startedAt: gw.createdAt || null,
     artifacts: gw.artifacts,
     agentResponse: (gw.metadata?.agentResponse as string) || undefined,
   };
@@ -243,28 +231,30 @@ function mapGatewayTask(gw: {
 // Map gateway VIADP delegations to the dashboard DelegationEntry interface
 function mapGatewayDelegation(gw: {
   id: string;
-  delegator: string;
-  delegatee: string;
-  task: string;
-  taskAr?: string;
-  trustScore: number;
+  from: string;
+  to: string;
+  taskId: string;
   status: string;
-  timestamp: string;
-  proofChain: string[];
+  reason?: string;
+  capabilityScore?: number;
+  createdAt?: string;
+  timestamp?: string;
 }): DelegationEntry {
   const validStatuses = ["verified", "pending", "failed"];
-  const status = (validStatuses.includes(gw.status) ? gw.status : "pending") as DelegationEntry["status"];
+  const mappedStatus = gw.status === 'approved' || gw.status === 'completed' ? 'verified'
+    : gw.status === 'rejected' ? 'failed'
+    : validStatuses.includes(gw.status) ? gw.status : 'pending';
 
   return {
     id: gw.id,
-    delegator: gw.delegator,
-    delegatee: gw.delegatee,
-    task: gw.task,
-    taskAr: gw.taskAr ?? gw.task,
-    trustScore: gw.trustScore,
-    status,
-    timestamp: gw.timestamp,
-    proofChain: gw.proofChain ?? [],
+    from: gw.from,
+    to: gw.to,
+    taskId: gw.taskId,
+    taskAr: gw.taskId,
+    trustScore: gw.capabilityScore ?? 0,
+    status: mappedStatus as DelegationEntry["status"],
+    timestamp: gw.createdAt ?? gw.timestamp ?? new Date().toISOString(),
+    proofChain: [],
   };
 }
 
@@ -291,7 +281,7 @@ function DashboardContent() {
 
   // Cache model assignments and cost data for mapping
   const assignmentsRef = useRef<Record<string, ModelAssignment>>({});
-  const costByAgentRef = useRef<Record<string, { cost: number; requests: number; tokens: number }>>({});
+  const costByAgentRef = useRef<Record<string, number>>({});
 
   // Fetch all data from gateway
   const loadData = useCallback(async () => {
@@ -385,7 +375,7 @@ function DashboardContent() {
             ? {
                 ...a,
                 status: effectiveStatus ?? a.status,
-                currentTask: data.currentTask !== undefined ? data.currentTask : a.currentTask,
+                currentTaskId: data.currentTask !== undefined ? data.currentTask : a.currentTaskId,
                 model: data.model ?? a.model,
               }
             : a
@@ -412,7 +402,7 @@ function DashboardContent() {
         const exists = prev.some((t) => t.id === evt.taskId);
         if (!exists && data.type === "created") {
           // Append newly created tasks
-          const column = statusToColumn[evt.currentStatus] ?? "backlog";
+          const status = (evt.currentStatus || "backlog") as Task["status"];
           return [
             ...prev,
             {
@@ -421,22 +411,22 @@ function DashboardContent() {
               titleAr: evt.data?.title ?? "Untitled",
               description: "",
               descriptionAr: "",
-              column,
-              assignedAgent: evt.data?.assignedTo ?? null,
+              status,
+              assignedTo: evt.data?.assignedTo ?? null,
               priority: (evt.data?.priority || "medium") as Task["priority"],
-              startTime: evt.timestamp,
+              startedAt: evt.timestamp,
             },
           ];
         }
         // Update existing tasks
         return prev.map((t) => {
           if (t.id !== evt.taskId) return t;
-          const column = statusToColumn[evt.currentStatus] ?? t.column;
+          const status = (evt.currentStatus || "backlog") as Task["status"];
           return {
             ...t,
-            column,
+            status,
             title: evt.data?.title ?? t.title,
-            assignedAgent: evt.data?.assignedTo ?? t.assignedAgent,
+            assignedTo: evt.data?.assignedTo ?? t.assignedTo,
             priority: (evt.data?.priority || t.priority) as Task["priority"],
           };
         });
@@ -453,12 +443,29 @@ function DashboardContent() {
       }
     });
 
-    // Workflow updates
+    // Workflow updates — gateway sends { type, instanceId, phaseName, ... }
     const unsubWorkflow = on("workflow_update", (data) => {
-      if (data && data.phase) {
+      if (!data) return;
+      if (data.type === 'phase_changed' && data.phaseName) {
         setWorkflowPhases((prev) =>
           prev.map((p) =>
-            p.name === data.phase ? { ...p, status: data.status, progress: data.progress } : p
+            p.name === data.phaseName
+              ? { ...p, status: "active" as WorkflowPhase["status"] }
+              : p.status === "active"
+                ? { ...p, status: "completed" as WorkflowPhase["status"], progress: 100 }
+                : p
+          )
+        );
+      } else if (data.type === 'completed') {
+        setWorkflowPhases((prev) =>
+          prev.map((p) => ({ ...p, status: "completed" as WorkflowPhase["status"], progress: 100 }))
+        );
+      } else if (data.type === 'step_completed' && data.phaseName) {
+        setWorkflowPhases((prev) =>
+          prev.map((p) =>
+            p.name === data.phaseName
+              ? { ...p, checkpointsComplete: Math.min(p.checkpointsComplete + 1, p.checkpoints), progress: Math.min(100, p.progress + Math.round(100 / Math.max(p.checkpoints, 1))) }
+              : p
           )
         );
       }
@@ -473,19 +480,48 @@ function DashboardContent() {
       loadData();
     });
 
-    // Real-time cost updates
+    // Real-time cost updates — gateway sends { type, agentId, dailyUsed, dailyCap }
     const unsubCost = on("cost_update", (data) => {
-      if (data && typeof data.cost === "number") {
-        setTodayCost(prev => prev + data.cost);
+      if (data && typeof data.dailyUsed === "number") {
+        setTodayCost(data.dailyUsed);
       }
     });
 
     // Escalation updates
-    const unsubEscalation = on('escalation_update' as any, (data: any) => {
+    const unsubEscalation = on('escalation_update', (data) => {
       if (data.type === 'created' && data.escalation) {
-        setEscalations(prev => [...prev, data.escalation]);
+        setEscalations(prev => [...prev, data.escalation as Escalation]);
       } else {
         fetchEscalations().then(r => setEscalations(r.escalations)).catch(() => {});
+      }
+    });
+
+    // Initial state snapshot from gateway — populate data immediately
+    const unsubInitialState = on('initial_state', (data) => {
+      if (data.agents?.length) {
+        const mapped = data.agents.map((gw) =>
+          mapGatewayAgent(gw as GatewayAgent, assignmentsRef.current, costByAgentRef.current)
+        );
+        setAgents(mapped);
+      }
+      if (data.tasks?.length) {
+        const mapped = (data.tasks as any[]).map(mapGatewayTask);
+        setTasks(mapped);
+      }
+      setIsLoading(false);
+    });
+
+    // Workflow approval gates — surface to user via interrupt-like behavior
+    const unsubApproval = on('approval_requested', (data) => {
+      console.log('[Socket] Workflow approval requested:', data.instanceId);
+      // Trigger a data reload to pick up the new interrupt
+      loadData();
+    });
+
+    // Workflow progress updates
+    const unsubProgress = on('workflow_progress', (data) => {
+      if (data.instanceId && data.progress != null) {
+        console.log('[Socket] Workflow progress:', data.instanceId, data.progress);
       }
     });
 
@@ -498,22 +534,18 @@ function DashboardContent() {
       unsubViadp();
       unsubCost();
       unsubEscalation();
+      unsubInitialState();
+      unsubApproval();
+      unsubProgress();
     };
   }, [on, loadData]);
 
-  const handleTaskMove = useCallback((taskId: string, newColumn: Task["column"]) => {
+  const handleTaskMove = useCallback((taskId: string, newColumn: Task["status"]) => {
     setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, column: newColumn } : t))
+      prev.map((t) => (t.id === taskId ? { ...t, status: newColumn } : t))
     );
     // Persist the move to the gateway
-    const columnToStatus: Record<string, string> = {
-      backlog: "backlog",
-      todo: "todo",
-      inProgress: "in-progress",
-      review: "review",
-      done: "done",
-    };
-    updateTask(taskId, { status: columnToStatus[newColumn] ?? newColumn }).catch((err) => {
+    updateTask(taskId, { status: newColumn }).catch((err) => {
       console.error("Failed to update task on gateway:", err);
     });
   }, []);
@@ -529,10 +561,10 @@ function DashboardContent() {
         titleAr: task.title,
         description: task.description,
         descriptionAr: task.description,
-        column: "backlog" as Task["column"],
-        assignedAgent: task.assignedTo ?? null,
+        status: "backlog" as Task["status"],
+        assignedTo: task.assignedTo ?? null,
         priority: task.priority as Task["priority"],
-        startTime: new Date().toISOString(),
+        startedAt: null,
       },
     ]);
     // Send to gateway
@@ -618,12 +650,12 @@ function DashboardContent() {
 
   // Computed stats
   const activeTasks = tasks.filter(
-    (t) => t.column === "inProgress" || t.column === "review"
+    (t) => t.status === "in-progress" || t.status === "review"
   ).length;
   const workingAgents = agents.filter(
     (a) => a.status === "working" || a.status === "reviewing"
   ).length;
-  const doneTasks = tasks.filter((t) => t.column === "done").length;
+  const doneTasks = tasks.filter((t) => t.status === "done").length;
   const sprintProgress = tasks.length > 0 ? Math.round((doneTasks / tasks.length) * 100) : 0;
 
   // Update document direction, language, and dark mode when state changes
@@ -860,10 +892,10 @@ function DashboardContent() {
                       </span>
                     </div>
                     <p className="text-xs text-text-secondary bidi-auto mb-2">
-                      {agent.currentTask
+                      {agent.currentTaskId
                         ? locale === "ar"
-                          ? agent.currentTaskAr
-                          : agent.currentTask
+                          ? agent.currentTaskIdAr
+                          : agent.currentTaskId
                         : t("agents.noActiveTask")}
                     </p>
                     <div className="flex items-center justify-between text-[10px] text-text-muted pt-2 border-t border-border/20">

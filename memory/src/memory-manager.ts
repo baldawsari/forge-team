@@ -29,6 +29,11 @@ export interface MemoryEntry {
   tags: string[];
   importance: number;
   accessCount: number;
+  contentType: string;
+  createdBy: string;
+  sessionId: string | null;
+  taskId: string | null;
+  phase: string | null;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
@@ -43,6 +48,11 @@ export interface StoreOptions {
   tags?: string[];
   importance?: number;
   expiresAt?: Date;
+  contentType?: string;
+  createdBy?: string;
+  sessionId?: string;
+  taskId?: string;
+  phase?: string;
 }
 
 export interface SearchFilters {
@@ -107,6 +117,11 @@ export class MemoryManager {
       tags,
       importance,
       accessCount: 0,
+      contentType: options.contentType ?? 'conversation',
+      createdBy: options.createdBy ?? 'system',
+      sessionId: options.sessionId ?? null,
+      taskId: options.taskId ?? null,
+      phase: options.phase ?? null,
       createdAt: now,
       updatedAt: now,
       expiresAt: options.expiresAt ?? null,
@@ -117,8 +132,8 @@ export class MemoryManager {
     try {
       await client.query(
         `INSERT INTO memory_entries
-           (id, scope, agent_id, project_id, team_id, thread_id, content, embedding, metadata, tags, importance, access_count, created_at, updated_at, expires_at, superseded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+           (id, scope, agent_id, project_id, team_id, thread_id, content, embedding, metadata, tags, importance, access_count, content_type, created_by, session_id, task_id, phase, created_at, updated_at, expires_at, superseded_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
           entry.id,
           entry.scope,
@@ -132,6 +147,11 @@ export class MemoryManager {
           JSON.stringify(entry.tags),
           entry.importance,
           entry.accessCount,
+          entry.contentType,
+          entry.createdBy,
+          entry.sessionId,
+          entry.taskId,
+          entry.phase,
           entry.createdAt.toISOString(),
           entry.updatedAt.toISOString(),
           entry.expiresAt ? entry.expiresAt.toISOString() : null,
@@ -402,8 +422,8 @@ export class MemoryManager {
 
       await client.query(
         `INSERT INTO memory_entries
-           (id, scope, agent_id, project_id, team_id, thread_id, content, embedding, metadata, tags, importance, access_count, created_at, updated_at, expires_at, superseded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+           (id, scope, agent_id, project_id, team_id, thread_id, content, embedding, metadata, tags, importance, access_count, content_type, created_by, session_id, task_id, phase, created_at, updated_at, expires_at, superseded_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
           summaryId,
           'thread',
@@ -424,6 +444,11 @@ export class MemoryManager {
           JSON.stringify(mergedTags),
           maxImportance,
           0,
+          'compaction',
+          'system',
+          toCompact[0].sessionId,
+          toCompact[0].taskId,
+          toCompact[0].phase,
           now.toISOString(),
           now.toISOString(),
           null,
@@ -543,6 +568,11 @@ export class MemoryManager {
           : (row.tags as string[]) ?? [],
       importance: Number(row.importance ?? 0.5),
       accessCount: Number(row.access_count ?? 0),
+      contentType: (row.content_type as string) ?? 'conversation',
+      createdBy: (row.created_by as string) ?? 'system',
+      sessionId: (row.session_id as string) ?? null,
+      taskId: (row.task_id as string) ?? null,
+      phase: (row.phase as string) ?? null,
       createdAt: new Date(row.created_at as string),
       updatedAt: new Date(row.updated_at as string),
       expiresAt: row.expires_at ? new Date(row.expires_at as string) : null,

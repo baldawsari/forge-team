@@ -134,19 +134,37 @@ export interface InitialStateEvent {
   };
 }
 
-/** Workflow update (future use) */
+/** Workflow update — matches gateway emission shape */
 export interface WorkflowUpdateEvent {
-  phase: string;
-  progress: number;
-  status: "complete" | "active" | "pending";
+  type: 'started' | 'completed' | 'failed' | 'phase_changed' | 'step_completed' | 'global_pause' | 'global_resume' | 'instance_paused' | 'instance_resumed';
+  instanceId?: string;
+  workflowName?: string;
+  phaseName?: string;
+  displayName?: string;
+  stepName?: string;
+  error?: string;
+  paused?: string[];
+  resumed?: string[];
 }
 
-/** Cost update (future use) */
+/** Cost update — matches gateway emission shape */
 export interface CostUpdateEvent {
+  type: 'agent-blocked' | 'agent-throttled' | 'threshold-warning';
   agentId: string;
-  tokensUsed: number;
-  cost: number;
-  model: string;
+  dailyUsed: number;
+  dailyCap: number;
+}
+
+/** Workflow approval request */
+export interface ApprovalRequestedEvent {
+  instanceId: string;
+  approval: unknown;
+}
+
+/** Workflow progress update */
+export interface WorkflowProgressEvent {
+  instanceId: string;
+  progress: unknown;
 }
 
 /** Party Mode agent selection event */
@@ -174,6 +192,8 @@ interface SocketEvents {
   viadp_update: (data: ViadpUpdateEvent) => void;
   workflow_update: (data: WorkflowUpdateEvent) => void;
   cost_update: (data: CostUpdateEvent) => void;
+  approval_requested: (data: ApprovalRequestedEvent) => void;
+  workflow_progress: (data: WorkflowProgressEvent) => void;
   party_mode_selection: (data: PartyModeSelectionEvent) => void;
   voice_transcript: (data: {
     id: string;

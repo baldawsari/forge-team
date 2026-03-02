@@ -7,6 +7,7 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { v4 as uuid } from 'uuid';
+import type { Pool } from 'pg';
 import type {
   AgentId,
   Task,
@@ -65,13 +66,82 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
   private tasks: Map<string, Task> = new Map();
   /** Custom WIP limits (overridable per session) */
   private wipLimits: Map<TaskStatus, number | null> = new Map();
+  private pool: Pool | null = null;
 
-  constructor() {
+  constructor(pool?: Pool) {
     super();
+    this.pool = pool ?? null;
     // Initialize default WIP limits
     for (const col of KANBAN_COLUMNS) {
       this.wipLimits.set(col.id, col.wipLimit);
     }
+  }
+
+  /**
+   * Loads tasks from PostgreSQL into the in-memory Map on startup.
+   */
+  async loadFromDB(): Promise<void> {
+    if (!this.pool) return;
+    try {
+      const result = await this.pool.query('SELECT * FROM tasks ORDER BY created_at ASC');
+      for (const row of result.rows) {
+        const task: Task = {
+          id: row.id,
+          title: row.title,
+          description: row.description ?? '',
+          status: row.status,
+          priority: row.priority,
+          complexity: row.complexity,
+          assignedTo: row.assigned_agent ?? null,
+          createdBy: row.created_by ?? 'system',
+          parentTaskId: row.parent_task_id ?? null,
+          subtaskIds: [],
+          dependsOn: row.depends_on ?? [],
+          blocks: [],
+          tags: row.tags ?? [],
+          phase: row.phase ?? '',
+          sessionId: row.session_id ?? '',
+          storyPoints: row.story_points ?? null,
+          artifacts: row.artifacts ?? [],
+          delegationChain: row.delegation_chain ?? [],
+          createdAt: new Date(row.created_at).toISOString(),
+          updatedAt: new Date(row.updated_at).toISOString(),
+          startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
+          completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+          dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
+          metadata: row.metadata ?? {},
+        };
+        this.tasks.set(task.id, task);
+      }
+
+      // Rebuild subtaskIds and blocks references
+      for (const task of this.tasks.values()) {
+        if (task.parentTaskId) {
+          const parent = this.tasks.get(task.parentTaskId);
+          if (parent && !parent.subtaskIds.includes(task.id)) {
+            parent.subtaskIds.push(task.id);
+          }
+        }
+        for (const depId of task.dependsOn) {
+          const dep = this.tasks.get(depId);
+          if (dep && !dep.blocks.includes(task.id)) {
+            dep.blocks.push(task.id);
+          }
+        }
+      }
+
+      console.log(`[TaskManager] Loaded ${result.rows.length} tasks from DB`);
+    } catch (err: any) {
+      console.warn('[TaskManager] Failed to load tasks from DB:', err?.message);
+    }
+  }
+
+  /** Fire-and-forget DB write helper */
+  private dbWrite(sql: string, params: unknown[]): void {
+    if (!this.pool) return;
+    this.pool.query(sql, params).catch((err: any) => {
+      console.warn('[TaskManager] DB write failed:', err?.message);
+    });
   }
 
   // =========================================================================
@@ -111,6 +181,13 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
     };
 
     this.tasks.set(task.id, task);
+
+    // Persist to DB
+    this.dbWrite(
+      `INSERT INTO tasks (id, title, description, status, priority, complexity, assigned_agent, created_by, parent_task_id, depends_on, tags, phase, session_id, story_points, artifacts, delegation_chain, metadata, kanban_column, created_at, updated_at, started_at, completed_at, due_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+      [task.id, task.title, task.description, task.status, task.priority, task.complexity, task.assignedTo, task.createdBy, task.parentTaskId, JSON.stringify(task.dependsOn), JSON.stringify(task.tags), task.phase, task.sessionId, task.storyPoints, JSON.stringify(task.artifacts), JSON.stringify(task.delegationChain), JSON.stringify(task.metadata), task.status, task.createdAt, task.updatedAt, task.startedAt, task.completedAt, task.dueAt],
+    );
 
     // Link to parent if specified
     if (input.parentTaskId) {
@@ -203,6 +280,13 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
     }
 
     task.updatedAt = new Date().toISOString();
+
+    // Persist to DB
+    this.dbWrite(
+      `UPDATE tasks SET title=$1, description=$2, priority=$3, complexity=$4, tags=$5, story_points=$6, due_at=$7, metadata=$8, assigned_agent=$9, updated_at=$10 WHERE id=$11`,
+      [task.title, task.description, task.priority, task.complexity, JSON.stringify(task.tags), task.storyPoints, task.dueAt, JSON.stringify(task.metadata), task.assignedTo, task.updatedAt, task.id],
+    );
+
     this.emitTaskEvent('task:updated', task, triggeredBy);
     return task;
   }
@@ -215,6 +299,10 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
     if (!task) return false;
     task.artifacts.push(artifactKey);
     task.updatedAt = new Date().toISOString();
+    this.dbWrite(
+      `UPDATE tasks SET artifacts=$1, updated_at=$2 WHERE id=$3`,
+      [JSON.stringify(task.artifacts), task.updatedAt, task.id],
+    );
     this.emitTaskEvent('task:updated', task, 'system');
     return true;
   }
@@ -243,6 +331,7 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
     }
 
     this.tasks.delete(taskId);
+    this.dbWrite('DELETE FROM tasks WHERE id=$1', [taskId]);
     return true;
   }
 
@@ -303,6 +392,12 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
       task.completedAt = task.updatedAt;
     }
 
+    // Persist to DB
+    this.dbWrite(
+      `UPDATE tasks SET status=$1, kanban_column=$2, updated_at=$3, started_at=$4, completed_at=$5 WHERE id=$6`,
+      [task.status, task.status, task.updatedAt, task.startedAt, task.completedAt, task.id],
+    );
+
     this.emitTaskEvent('task:moved', task, triggeredBy, previousStatus);
 
     if (newStatus === 'done') {
@@ -324,6 +419,12 @@ export class TaskManager extends EventEmitter<TaskManagerEvents> {
 
     task.assignedTo = agentId;
     task.updatedAt = new Date().toISOString();
+
+    // Persist to DB
+    this.dbWrite(
+      `UPDATE tasks SET assigned_agent=$1, updated_at=$2 WHERE id=$3`,
+      [agentId, task.updatedAt, task.id],
+    );
 
     this.emitTaskEvent('task:assigned', task, triggeredBy);
     return true;
