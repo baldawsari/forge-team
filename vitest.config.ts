@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    exclude: ['**/node_modules/**', 'tests/e2e/dashboard.spec.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/dashboard.spec.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

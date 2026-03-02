@@ -105,7 +105,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     (executor as any).instances.set(instanceId, instance);
 
     // Create an interrupt — this should also pause the workflow
-    const interruptId = executor.createInterrupt(
+    const interruptId = await executor.createInterrupt(
       instanceId,
       'architect',
       'Architect',
@@ -160,7 +160,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     (executor as any).instances.set(instanceId, instance);
 
     // Create interrupt (pauses workflow)
-    const interruptId = executor.createInterrupt(
+    const interruptId = await executor.createInterrupt(
       instanceId,
       'qa-architect',
       'QA Architect',
@@ -172,7 +172,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     expect(executor.getInstance(instanceId)!.status).toBe('paused');
 
     // Resolve with approval — this triggers resumeWorkflow internally
-    executor.resolveInterrupt(interruptId, true, 'Looks good, proceed.');
+    await executor.resolveInterrupt(interruptId, true, 'Looks good, proceed.');
 
     // The interrupt should now be approved
     const allInterrupts = executor.getAllInterrupts();
@@ -191,7 +191,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
   // 3. Handle human rejection by stopping the workflow
   // -----------------------------------------------------------------------
 
-  it('should handle human rejection by stopping the workflow', () => {
+  it('should handle human rejection by stopping the workflow', async () => {
     const instanceId = 'wf-reject-test';
     const instance = {
       id: instanceId,
@@ -215,7 +215,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     (executor as any).instances.set(instanceId, instance);
 
     // Create interrupt
-    const interruptId = executor.createInterrupt(
+    const interruptId = await executor.createInterrupt(
       instanceId,
       'security-specialist',
       'Security Specialist',
@@ -227,7 +227,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     );
 
     // Reject the interrupt
-    executor.resolveInterrupt(interruptId, false, 'Need re-scan with updated rules.');
+    await executor.resolveInterrupt(interruptId, false, 'Need re-scan with updated rules.');
 
     // Interrupt status should be rejected
     const allInterrupts = executor.getAllInterrupts();
@@ -245,7 +245,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
   // 4. Persist checkpoint across simulated restart
   // -----------------------------------------------------------------------
 
-  it('should persist checkpoint across simulated restart', () => {
+  it('should persist checkpoint across simulated restart', async () => {
     const instanceId = 'wf-persist-test';
     const instance = {
       id: instanceId,
@@ -269,7 +269,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     (executor as any).instances.set(instanceId, instance);
 
     // Create an interrupt on the first executor
-    const interruptId = executor.createInterrupt(
+    const interruptId = await executor.createInterrupt(
       instanceId,
       'backend-dev',
       'Backend Developer',
@@ -303,7 +303,7 @@ describe('Interrupt / Resume — Integration Tests', () => {
     expect(originalPending[0].type).toBe('human_mention');
 
     // We can still resolve the interrupt on the original executor
-    executor.resolveInterrupt(interruptId, true);
+    await executor.resolveInterrupt(interruptId, true);
     expect(executor.getPendingInterrupts()).toHaveLength(0);
   });
 });

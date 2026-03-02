@@ -338,12 +338,8 @@ export class ModelRouter extends EventEmitter {
 
     const capStatus = this.checkCostCap(request.agentId);
     if (capStatus.severity === 'blocked') {
-      // Return cheapest model but flag as blocked so callers can check reason
-      const cheapest = Object.values(MODEL_CATALOG).sort(
-        (a, b) => a.inputCostPer1M - b.inputCostPer1M
-      )[0];
       return {
-        model: cheapest,
+        model: null,
         reason: 'hard-cap-blocked',
         estimatedCost: 0,
         classifiedTier: 'fast',
