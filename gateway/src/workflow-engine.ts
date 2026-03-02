@@ -634,7 +634,7 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     }
   }
 
-  createInterrupt(instanceId: string, agentId: string, agentName: string, stepId: string, type: string, question: string, context?: string, confidence?: number): string {
+  async createInterrupt(instanceId: string, agentId: string, agentName: string, stepId: string, type: string, question: string, context?: string, confidence?: number): Promise<string> {
     const id = randomUUID();
     const interrupt = {
       id,
@@ -651,17 +651,17 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     };
     this.pendingInterrupts.set(id, interrupt);
     if (this.instances.has(instanceId)) {
-      this.pauseWorkflow(instanceId);
+      await this.pauseWorkflow(instanceId);
     }
     return id;
   }
 
-  resolveInterrupt(interruptId: string, approved: boolean, feedback?: string): void {
+  async resolveInterrupt(interruptId: string, approved: boolean, feedback?: string): Promise<void> {
     const interrupt = this.pendingInterrupts.get(interruptId);
     if (!interrupt) throw new Error(`Interrupt ${interruptId} not found`);
     interrupt.status = approved ? 'approved' : 'rejected';
     if (approved && this.instances.has(interrupt.instanceId)) {
-      this.resumeWorkflow(interrupt.instanceId);
+      await this.resumeWorkflow(interrupt.instanceId);
     }
   }
 
@@ -673,11 +673,11 @@ export class WorkflowExecutor extends EventEmitter<WorkflowEngineEvents> {
     return Array.from(this.pendingInterrupts.values());
   }
 
-  pauseAllWorkflows(): { paused: string[] } {
+  async pauseAllWorkflows(): Promise<{ paused: string[] }> {
     const paused: string[] = [];
     for (const [id, instance] of this.instances.entries()) {
       if (instance.status === 'in-progress' || instance.status === 'waiting_approval') {
-        this.pauseWorkflow(id);
+        await this.pauseWorkflow(id);
         paused.push(id);
       }
     }

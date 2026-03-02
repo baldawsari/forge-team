@@ -393,13 +393,13 @@ Fixes should be applied in this order, as some unblock others:
 21. ~~**H-10:** Make task execution async (return 202, push via socket)~~ ✅
 22. ~~**H-11:** Fix temp task ID reconciliation~~ ✅
 
-### Phase 7: Resilience
-23. **H-13:** Add delegation recursion depth limit
-24. **H-14:** Add AI API call timeouts
-25. **H-23:** Fix async/await in workflow interrupt handlers
-26. **H-24:** Fix null model check
-27. **H-25:** Fix companyKBId race condition
-28. **C-12:** Fix Anthropic tool_use validation + Gemini retry logic
+### Phase 7: Resilience ✅ DONE
+23. ~~**H-13:** Add delegation recursion depth limit~~ ✅
+24. ~~**H-14:** Add AI API call timeouts~~ ✅
+25. ~~**H-23:** Fix async/await in workflow interrupt handlers~~ ✅
+26. ~~**H-24:** Fix null model check~~ ✅
+27. ~~**H-25:** Fix companyKBId race condition~~ ✅
+28. ~~**C-12:** Fix Anthropic tool_use validation + Gemini retry logic~~ ✅
 
 ### Phase 8: Infrastructure & Security
 29. **C-07:** Remove API keys from `.env.example`

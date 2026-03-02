@@ -40,6 +40,12 @@ const MAX_OUTPUT_TOKENS = 4096;
 
 const MAX_TOOL_USE_ROUNDS = 5;
 
+/** Maximum delegation depth to prevent infinite recursion (A → B → C → A) */
+const MAX_DELEGATION_DEPTH = 3;
+
+/** Timeout for AI API calls in milliseconds (2 minutes) */
+const AI_API_TIMEOUT_MS = 120_000;
+
 /**
  * Map internal model IDs to the actual API model identifiers.
  * Our catalog uses friendly names; the providers expect specific strings.
@@ -120,7 +126,8 @@ interface AgentRunnerDeps {
   memoryManager?: MemoryManager;
   geminiFileSearch?: GeminiFileSearch;
   vectorStore?: VectorStore;
-  companyKBId?: string;
+  /** Getter function to resolve companyKBId lazily (avoids race condition with async init) */
+  getCompanyKBId?: () => string | null;
   toolRegistry?: ToolRegistry;
   sandboxManager?: SandboxManager;
   viadpEngine?: VIADPEngine;
@@ -137,7 +144,7 @@ export class AgentRunner {
   private memoryManager: MemoryManager | null;
   private geminiFileSearch: GeminiFileSearch | null;
   private vectorStore: VectorStore | null;
-  private companyKBId: string | null;
+  private getCompanyKBId: () => string | null;
   private toolRegistry: ToolRegistry | null;
   private sandboxManager: SandboxManager | null;
   private viadpEngine: VIADPEngine | null;
@@ -157,7 +164,7 @@ export class AgentRunner {
     this.memoryManager = deps.memoryManager ?? null;
     this.geminiFileSearch = deps.geminiFileSearch ?? null;
     this.vectorStore = deps.vectorStore ?? null;
-    this.companyKBId = deps.companyKBId ?? null;
+    this.getCompanyKBId = deps.getCompanyKBId ?? (() => null);
     this.toolRegistry = deps.toolRegistry ?? null;
     this.sandboxManager = deps.sandboxManager ?? null;
     this.viadpEngine = deps.viadpEngine ?? null;
@@ -176,6 +183,7 @@ export class AgentRunner {
     userMessage: string,
     sessionId: string,
     systemPromptOverride?: string,
+    delegationDepth: number = 0,
   ): Promise<AgentRunnerResult> {
     // 1. Get agent config
     const agentConfig = this.agentManager.getConfig(agentId);
@@ -195,6 +203,17 @@ export class AgentRunner {
       taskContent: userMessage,
       sessionId,
     });
+
+    // Check if the agent has been blocked by cost caps
+    if (routingResult.reason === 'hard-cap-blocked') {
+      console.warn(`[AgentRunner] Agent ${agentId} blocked by cost cap`);
+      return {
+        content: `I cannot process your request right now because agent "${agentId}" has exceeded its daily cost budget. Please wait until the budget resets or ask an admin to increase the cap.`,
+        model: 'unknown',
+        inputTokens: 0,
+        outputTokens: 0,
+      };
+    }
 
     const modelId = routingResult.model.id;
     const provider = routingResult.model.provider;
@@ -251,7 +270,7 @@ export class AgentRunner {
     let result!: { content: string; inputTokens: number; outputTokens: number };
     const callStartTime = Date.now();
 
-    const MAX_RETRIES = 1;
+    const MAX_RETRIES = 2;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -277,8 +296,9 @@ export class AgentRunner {
         const isRetryable = [429, 503, 529].includes(status);
 
         if (isRetryable && attempt < MAX_RETRIES) {
-          const delay = Math.pow(2, attempt) * 1000;
-          console.warn(`[AgentRunner] Retryable error (${status}), retrying in ${delay}ms...`);
+          // Exponential backoff: 2s, 4s for rate limits
+          const delay = Math.pow(2, attempt + 1) * 1000;
+          console.warn(`[AgentRunner] Retryable error (${status}) from ${provider}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           break;
@@ -287,9 +307,23 @@ export class AgentRunner {
     }
 
     if (lastError) {
-      console.error(`[AgentRunner] API call failed for ${agentId}:`, lastError?.message ?? lastError);
+      const status = (lastError as any)?.status ?? (lastError as any)?.statusCode ?? 0;
+      console.error(`[AgentRunner] API call failed for ${agentId} (status=${status}):`, lastError?.message ?? lastError);
+
+      // Return user-friendly error messages instead of raw API errors
+      let userMessage: string;
+      if (status === 429) {
+        userMessage = `The AI service is currently rate-limited. Please try again in a moment.`;
+      } else if (status === 400) {
+        userMessage = `There was an issue processing the request. The team has been notified. Please try again.`;
+      } else if (status === 503 || status === 529) {
+        userMessage = `The AI service is temporarily unavailable. Please try again shortly.`;
+      } else {
+        userMessage = `I encountered a temporary issue processing your message. Please try again.`;
+      }
+
       return {
-        content: `I encountered an error processing your message. Error: ${lastError?.message ?? 'Unknown error'}`,
+        content: userMessage,
         model: modelId,
         inputTokens: 0,
         outputTokens: 0,
@@ -298,17 +332,22 @@ export class AgentRunner {
 
     // 8.5. Check for delegation markers in the response
     if (result.content.includes('[DELEGATE:')) {
-      const delegateMatch = result.content.match(/\[DELEGATE:\s*(@[\w-]+)\s*\]\s*(.+?)(?:\[\/DELEGATE\]|$)/s);
-      if (delegateMatch) {
-        const targetId = delegateMatch[1].replace('@', '') as AgentId;
-        const delegatedTask = delegateMatch[2].trim();
+      if (delegationDepth >= MAX_DELEGATION_DEPTH) {
+        console.warn(`[AgentRunner] Delegation depth limit (${MAX_DELEGATION_DEPTH}) reached for ${agentId}. Skipping further delegation.`);
+        result.content += `\n\n_[Delegation depth limit reached — cannot delegate further]_`;
+      } else {
+        const delegateMatch = result.content.match(/\[DELEGATE:\s*(@[\w-]+)\s*\]\s*(.+?)(?:\[\/DELEGATE\]|$)/s);
+        if (delegateMatch) {
+          const targetId = delegateMatch[1].replace('@', '') as AgentId;
+          const delegatedTask = delegateMatch[2].trim();
 
-        console.log(`[AgentRunner] ${agentId} requested delegation to ${targetId}`);
-        const subResult = await this.spawnSubAgent(agentId, targetId, delegatedTask, sessionId);
-        if (subResult) {
-          result.content += `\n\n---\n**Response from @${targetId}:**\n${subResult.content}`;
-          result.inputTokens += subResult.inputTokens;
-          result.outputTokens += subResult.outputTokens;
+          console.log(`[AgentRunner] ${agentId} requested delegation to ${targetId} (depth=${delegationDepth + 1})`);
+          const subResult = await this.spawnSubAgent(agentId, targetId, delegatedTask, sessionId, delegationDepth + 1);
+          if (subResult) {
+            result.content += `\n\n---\n**Response from @${targetId}:**\n${subResult.content}`;
+            result.inputTokens += subResult.inputTokens;
+            result.outputTokens += subResult.outputTokens;
+          }
         }
       }
     }
@@ -414,6 +453,7 @@ export class AgentRunner {
     targetAgentId: AgentId,
     taskDescription: string,
     sessionId: string,
+    delegationDepth: number = 0,
   ): Promise<AgentRunnerResult | null> {
     const parentConfig = this.agentManager.getConfig(parentAgentId);
     if (!parentConfig) {
@@ -483,6 +523,7 @@ export class AgentRunner {
       taskDescription,
       sessionId,
       delegationPrompt,
+      delegationDepth,
     );
 
     this.agentManager.dispatchMessage({
@@ -567,6 +608,52 @@ export class AgentRunner {
   }
 
   // -------------------------------------------------------------------------
+  // Anthropic History Sanitization
+  // -------------------------------------------------------------------------
+
+  /**
+   * Sanitizes conversation history for the Anthropic API.
+   * Strips any serialized tool_use block references from prior conversations
+   * to prevent "tool_use without matching tool_result" validation errors.
+   * Also ensures messages alternate between user and assistant roles.
+   */
+  private sanitizeAnthropicHistory(messages: ChatMessage[]): ChatMessage[] {
+    const sanitized: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      let content = msg.content;
+
+      // Remove serialized tool_use and tool_result markers that may appear
+      // in plain-text conversation history from prior sessions
+      content = content.replace(/\[tool_use:\s*[\w-]+\]/g, '');
+      content = content.replace(/\[tool_result:\s*[\w-]+\]/g, '');
+      content = content.replace(/toolu_[A-Za-z0-9_-]+/g, '[tool-ref]');
+
+      if (!content.trim()) continue;
+
+      sanitized.push({ role: msg.role, content });
+    }
+
+    // Ensure messages alternate between user and assistant.
+    // Anthropic requires strict alternation — merge consecutive same-role messages.
+    const merged: ChatMessage[] = [];
+    for (const msg of sanitized) {
+      if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
+        merged[merged.length - 1].content += '\n\n' + msg.content;
+      } else {
+        merged.push({ ...msg });
+      }
+    }
+
+    // Ensure the first message is from the user
+    if (merged.length > 0 && merged[0].role !== 'user') {
+      merged.shift();
+    }
+
+    return merged;
+  }
+
+  // -------------------------------------------------------------------------
   // Provider: Anthropic Claude
   // -------------------------------------------------------------------------
 
@@ -588,11 +675,16 @@ export class AgentRunner {
       };
     }
 
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey, timeout: AI_API_TIMEOUT_MS });
     const apiModelId = ANTHROPIC_MODEL_MAP[modelId] ?? modelId;
 
+    // Sanitize conversation history: strip any orphaned tool_use block references
+    // that might exist from serialized previous conversations. The Anthropic API
+    // requires every tool_use block to have a matching tool_result immediately after.
+    const sanitizedMessages = this.sanitizeAnthropicHistory(messages);
+
     let anthropicMessages: Array<{ role: 'user' | 'assistant'; content: any }> =
-      messages.map((m) => ({ role: m.role, content: m.content }));
+      sanitizedMessages.map((m) => ({ role: m.role, content: m.content }));
 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
@@ -692,6 +784,7 @@ export class AgentRunner {
     const modelConfig: any = {
       model: apiModelId,
       systemInstruction: systemPrompt,
+      requestOptions: { timeout: AI_API_TIMEOUT_MS },
     };
 
     if (tools && tools.length > 0) {
@@ -973,10 +1066,10 @@ export class AgentRunner {
           }
         }
       }
-    } else if (!storeId && this.companyKBId && this.geminiFileSearch) {
+    } else if (!storeId && this.getCompanyKBId() && this.geminiFileSearch) {
       // Fall back to company-wide KB
       try {
-        const searchResult = await this.geminiFileSearch.search(this.companyKBId, userMessage, 3);
+        const searchResult = await this.geminiFileSearch.search(this.getCompanyKBId()!, userMessage, 3);
         fileSearchResults = searchResult.results.map(r => r.content);
       } catch (err: any) {
         console.warn(`[AgentRunner] Company KB search failed:`, err?.message);

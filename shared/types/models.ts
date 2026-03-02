@@ -81,7 +81,7 @@ export interface ModelRoutingResult {
   /** Selected model */
   model: ModelConfig;
   /** Why this model was selected */
-  reason: 'primary' | 'fallback' | 'complexity-override' | 'cost-constraint' | 'capability-requirement';
+  reason: 'primary' | 'fallback' | 'complexity-override' | 'cost-constraint' | 'capability-requirement' | 'hard-cap-blocked';
   /** Estimated cost for this request */
   estimatedCost: number;
   /** Classified complexity tier */

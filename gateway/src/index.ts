@@ -160,7 +160,7 @@ const agentRunner = new AgentRunner({
   memoryManager,
   geminiFileSearch: geminiFileSearch ?? undefined,
   vectorStore,
-  companyKBId: companyKBId ?? undefined,
+  getCompanyKBId: () => companyKBId,
   toolRegistry,
   sandboxManager,
   viadpEngine,
@@ -645,15 +645,11 @@ app.post('/api/workflows/start', express.json(), asyncHandler(async (req, res) =
   }
 }));
 
-app.post('/api/workflows/pause-all', (_req, res) => {
-  try {
-    const result = workflowExecutor.pauseAllWorkflows();
-    io.emit('workflow_update', { type: 'global_pause', paused: result.paused });
-    res.json({ success: true, ...result });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
+app.post('/api/workflows/pause-all', asyncHandler(async (_req, res) => {
+  const result = await workflowExecutor.pauseAllWorkflows();
+  io.emit('workflow_update', { type: 'global_pause', paused: result.paused });
+  res.json({ success: true, ...result });
+}));
 
 app.post('/api/workflows/resume-all', asyncHandler(async (_req, res) => {
   try {
@@ -771,22 +767,18 @@ app.get('/api/interrupts/all', (_req, res) => {
   res.json({ interrupts: all });
 });
 
-app.post('/api/interrupts/:id/resolve', express.json(), (req, res) => {
+app.post('/api/interrupts/:id/resolve', express.json(), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { approved, feedback } = req.body;
-  try {
-    workflowExecutor.resolveInterrupt(id, approved, feedback);
-    io.emit('interrupt_update', {
-      type: approved ? 'approved' : 'rejected',
-      interruptId: id,
-      feedback,
-      timestamp: new Date().toISOString(),
-    });
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
+  await workflowExecutor.resolveInterrupt(id, approved, feedback);
+  io.emit('interrupt_update', {
+    type: approved ? 'approved' : 'rejected',
+    interruptId: id,
+    feedback,
+    timestamp: new Date().toISOString(),
+  });
+  res.json({ success: true });
+}));
 
 app.get('/api/escalations', (req, res) => {
   const status = req.query.status as string | undefined;
@@ -1955,7 +1947,7 @@ io.on('connection', (socket) => {
 
         agentRunner
           .processUserMessage(targetAgentId, payload.content, sessionId)
-          .then((result) => {
+          .then(async (result) => {
             const responseMessage: AgentMessage = {
               id: uuid(),
               type: 'chat.response',
@@ -1979,7 +1971,7 @@ io.on('connection', (socket) => {
             agentManager.setAgentStatus(targetAgentId, 'idle');
 
             if (containsHumanMention(result.content)) {
-              const intId = workflowExecutor.createInterrupt(
+              const intId = await workflowExecutor.createInterrupt(
                 sessionId, targetAgentId, agentConfig.name, 'direct-message',
                 'human_mention', result.content,
                 `Agent ${agentConfig.name} requested human attention via @human mention`,
@@ -2163,7 +2155,7 @@ agentManager.on('agent:task-failed', (agentId, taskId, sessionId, error) => {
 });
 
 // --- Agent messages ---
-agentManager.on('agent:message', (message) => {
+agentManager.on('agent:message', async (message) => {
   io.emit('message', message);
 
   const msgContent = message.payload?.content ?? '';
@@ -2171,7 +2163,7 @@ agentManager.on('agent:message', (message) => {
     const fromAgentId = message.from as string;
     const fromConfig = agentManager.getConfig(fromAgentId as AgentId);
     const fromAgentName = fromConfig?.name ?? fromAgentId;
-    const interruptId = workflowExecutor.createInterrupt(
+    const interruptId = await workflowExecutor.createInterrupt(
       message.sessionId ?? 'direct',
       fromAgentId,
       fromAgentName,
